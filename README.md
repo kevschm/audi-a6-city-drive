@@ -31,7 +31,22 @@ npm run verify
 
 ## Veröffentlichung
 
-Das Repository ist privat. Ziel ist eine HTTPS-Bereitstellung über Cloudflare Pages mit GitHub-Anbindung. Die öffentliche Spiel-URL ist noch nicht eingerichtet oder verifiziert. Statisches Hosting: Root-Verzeichnis `/`, kein Build-Befehl erforderlich. `index.html` lädt `src/main.js` und `src/styles.css` direkt.
+Die Veröffentlichung erfolgt über **Cloudflare Pages** mit GitHub-Anbindung. Das Repository darf privat bleiben; die bereitgestellte Spielwebsite ist standardmäßig **öffentlich erreichbar**. Die produktive URL ist noch nicht eingerichtet oder verifiziert.
+
+Einmalig im Cloudflare-Dashboard ein Pages-Projekt über **Workers & Pages → Create application → Pages → Connect to Git** anlegen und das private Repository `kevschm/audi-a6-city-drive` autorisieren. Als Produktionszweig `main` festlegen.
+
+| Cloudflare-Einstellung | Wert |
+| --- | --- |
+| Project name | `audi-a6-city-drive` (falls verfügbar) |
+| Framework preset | `None` |
+| Production branch | `main` |
+| Root directory | `/` (Repository-Wurzel) |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+
+Der Build kopiert **nur die zur Ausführung benötigten Spiel-Dateien** in `dist/`. Entwicklungsdateien und Tests werden nicht bereitgestellt. Nach jeder Änderung an `main` kann Cloudflare automatisch neu veröffentlichen. Die URL wird erst nach erfolgreicher Bereitstellung angezeigt.
+
+**Hinweis:** Auch bei privatem Repository können Besucher einer öffentlichen Browser-Spielseite das ausgelieferte HTML, CSS und JavaScript sehen. Für eine ausschließlich private Spielseite wäre zusätzlich eine Zugriffskontrolle erforderlich.
 
 ## Entwicklung
 
