@@ -29,6 +29,14 @@ Node.js >=20 benötigt, keine Pakete zu installieren:
 npm run verify
 ```
 
+## Ohne Download im Browser ausprobieren (GitHub Codespaces)
+
+Das Projekt startet im Codespace automatisch einen Node-Webserver auf Port 8000 und versucht, die Spielvorschau im Browser zu öffnen.
+
+**[Codespaces für Audi A6 City Drive öffnen](https://codespaces.new/kevschm/audi-a6-city-drive?quickstart=1)**
+
+GitHub-Anmeldung und gegebenenfalls Erstellung eines Codespace können erforderlich sein. Im Browser kann eine Bestätigung zur Vorschau erscheinen. Ein Codespace ist eine temporäre Entwicklungsumgebung und **keine dauerhafte öffentliche Website**; die laufende Umgebung verbraucht Codespaces-Ressourcen und kann nach Freikontingent Kosten verursachen.
+
 ## Veröffentlichung
 
 Die Veröffentlichung erfolgt über **Cloudflare Pages** mit GitHub-Anbindung. Das Repository darf privat bleiben; die bereitgestellte Spielwebsite ist standardmäßig **öffentlich erreichbar**. Die produktive URL ist noch nicht eingerichtet oder verifiziert.
