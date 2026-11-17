@@ -23,7 +23,8 @@ Stand: 17. November 2026. Qualitätsziel: spielbare, glaubwürdige Fahrzeug- und
 - [x] Node-basierte Tests für Simulationsuhr sowie Syntaxprüfung hinzufügen.
 - [ ] Starten und Fahren auf Samsung Internet, Chrome/Android und Windows/Chrome **auf echten Geräten prüfen**.
 - [ ] Cloudflare Pages an das private GitHub-Repo anbinden; produktive URL prüfen.
-- [ ] Später: Vite-Entwicklungsserver und Continuous Integration einrichten, ohne die Spielbarkeit zu verlieren.
+- [x] GitHub Actions führt Syntaxprüfung und Simulationsuhr-Unit-Tests bei Push/PR aus.
+- [ ] Später: Vite-Entwicklungsserver für weitere Module und Assets ergänzen.
 
 **Abnahme P0:** Spiel startet ohne Fehlermeldung über HTTPS; Gas, Bremse, Lenkung, Pause und Reset funktionieren; Testskript läuft fehlerfrei.
 
