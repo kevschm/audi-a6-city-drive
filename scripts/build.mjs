@@ -3,7 +3,7 @@ import { resolve, relative, isAbsolute } from 'node:path';
 
 const root = process.cwd();
 const dist = resolve(root, 'dist');
-const files = ['index.html', 'src/main.js', 'src/styles.css', 'src/simulation/fixed-step.js'];
+const files = ['index.html', 'src/main.js', 'src/styles.css', 'src/simulation/fixed-step.js', 'src/performance/adaptive-resolution.js'];
 
 for (const path of files) {
   const f = resolve(root, path);
