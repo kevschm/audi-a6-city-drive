@@ -22,6 +22,7 @@ Stand: 17. November 2026. Qualitätsziel: spielbare, glaubwürdige Fahrzeug- und
 - [x] Fester 60-Hz-Physiktakt, begrenztes Aufholen, Unterbrechungen ohne Zeitsprung.
 - [x] Node-basierte Tests für Simulationsuhr sowie Syntaxprüfung hinzufügen.
 - [ ] Starten und Fahren auf Samsung Internet, Chrome/Android und Windows/Chrome **auf echten Geräten prüfen**.
+- [x] Produktions-Build für Cloudflare Pages vorbereitet (`npm run build`, Ausgabe `dist/`).
 - [ ] Cloudflare Pages an das private GitHub-Repo anbinden; produktive URL prüfen.
 - [x] GitHub Actions führt Syntaxprüfung und Simulationsuhr-Unit-Tests bei Push/PR aus.
 - [ ] Später: Vite-Entwicklungsserver für weitere Module und Assets ergänzen.
