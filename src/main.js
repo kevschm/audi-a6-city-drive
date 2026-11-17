@@ -1,4 +1,5 @@
 import { createFixedStepClock } from "./simulation/fixed-step.js";
+import { createAdaptiveResolution } from "./performance/adaptive-resolution.js";
 (()=>{'use strict';
 const $=id=>document.getElementById(id),canvas=$('view'),mini=$('minimap'),mctx=mini.getContext('2d');
 let gl;try{gl=canvas.getContext('webgl',{alpha:false,antialias:true,depth:true,powerPreference:'high-performance'})||canvas.getContext('experimental-webgl')}catch(err){};
@@ -134,6 +135,7 @@ const input={left:false,right:false,throttle:false,brake:false,handbrake:false};
 const car={x:0,z:0,heading:0,vx:0,vz:0,speed:0,steer:0,yaw:0,spin:0,roll:0,pitch:0,km:0,rpm:900};
 const traffic=[];for(let j=0;j<14;j++){let axis=j%2,road=pick([-210,-140,-70,70,140,210]),dir=random()>.5?1:-1,where=r(-218,218),offset=dir>0?-4:4;traffic.push({axis,dir,x:axis?where:road-offset,z:axis?road+offset:where,heading:axis?(dir>0?Math.PI/2:-Math.PI/2):(dir>0?0:Math.PI),speed:r(5.5,10.3),tint:pick(['#cad0d2','#b36e60','#4c7893','#82a1a3','#a8a7a2','#bdbaab'])})}
 const clock = createFixedStepClock();
+const adaptiveResolution = createAdaptiveResolution();
 const keys={w:'throttle',ArrowUp:'throttle',s:'brake',ArrowDown:'brake',a:'left',ArrowLeft:'left',d:'right',ArrowRight:'right',' ':'handbrake'};
 let started=false,paused=false,cameraMode=0,qualityHigh=true,viewCamera=[-3,7,-14],prev=0,frames=0,hitTime=-100,toastTimer=0;
 function message(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),1550)}
@@ -141,10 +143,10 @@ function clearInput(){for(let k in input)input[k]=false;document.querySelectorAl
 function reset(){car.x=0;car.z=0;car.heading=0;car.vx=car.vz=car.speed=car.steer=car.yaw=car.spin=car.roll=car.pitch=car.km=0;viewCamera=[-3,7,-14];clearInput();message('FAHRZEUG ZURÜCKGESETZT')}
 function cameraSwitch(){cameraMode=(cameraMode+1)%3;$('camBtn').textContent=['◉ Verfolger','◉ Cockpit','◉ Übersicht'][cameraMode];message(['VERFOLGERKAMERA','COCKPIT-ANSICHT','ÜBERSICHTSKAMERA'][cameraMode])}
 function pauseSwitch(){if(!started)return;paused=!paused;$('pauseModal').classList.toggle('hidden',!paused);$('pauseBtn').textContent=paused?'▶ Weiter':'Ⅱ Pause';clearInput();clock.reset()}
-function qualitySwitch(){qualityHigh=!qualityHigh;$('qualityBtn').textContent=qualityHigh?'◫ Grafik: Hoch':'◫ Grafik: Eco';message(qualityHigh?'GRAFIKQUALITÄT: HOCH':'ENERGIESPARMODUS AKTIV')}
+function qualitySwitch(){qualityHigh=!qualityHigh;adaptiveResolution.reset();$('qualityBtn').textContent=qualityHigh?'◫ Grafik: Auto':'◫ Grafik: Eco';message(qualityHigh?'ADAPTIVE GRAFIK AKTIV':'ENERGIESPARMODUS AKTIV')}
 function start(){if(started){$('intro').classList.add('hidden');return}started=true;paused=false;$('intro').classList.add('hidden');$('camBtn').textContent='◉ Verfolger';prev=performance.now();clock.reset(prev);requestAnimationFrame(frame)}
 // Click rather than touchstart avoids duplicate touch/click activations.
-$('startBtn').disabled=false;$('startBtn').textContent='Motor starten';$('startBtn').addEventListener('click',start);$('camBtn').addEventListener('click',cameraSwitch);$('pauseBtn').addEventListener('click',pauseSwitch);$('qualityBtn').addEventListener('click',qualitySwitch);$('resumeBtn').addEventListener('click',pauseSwitch);$('resetBtn').addEventListener('click',()=>{reset();pauseSwitch()});
+$('startBtn').disabled=false;$('startBtn').textContent='Motor starten';$('qualityBtn').textContent='◫ Grafik: Auto';$('startBtn').addEventListener('click',start);$('camBtn').addEventListener('click',cameraSwitch);$('pauseBtn').addEventListener('click',pauseSwitch);$('qualityBtn').addEventListener('click',qualitySwitch);$('resumeBtn').addEventListener('click',pauseSwitch);$('resetBtn').addEventListener('click',()=>{reset();pauseSwitch()});
 window.addEventListener('keydown',e=>{if(Object.prototype.hasOwnProperty.call(keys,e.key)){input[keys[e.key]]=true;e.preventDefault()}if(e.repeat)return;let k=e.key.toLowerCase();if(k==='v')cameraSwitch();if(k==='r')reset();if(k==='p'||e.key==='Escape')pauseSwitch()},{passive:false});
 window.addEventListener('keyup',e=>{if(Object.prototype.hasOwnProperty.call(keys,e.key)){input[keys[e.key]]=false;e.preventDefault()}},{passive:false});
 window.addEventListener('blur',()=>{clearInput();clock.reset()});document.addEventListener('visibilitychange',()=>{clearInput();clock.reset()});
@@ -178,8 +180,8 @@ $('speed').textContent=Math.round(av*3.6);$('gear').textContent=gear;$('rpm').te
 let district=Math.abs(car.x)<68&&Math.abs(car.z+35)<35?'AM STADTPARK':Math.abs(car.x+35)<35&&Math.abs(car.z-35)<35?'MARKTPLATZ':Math.abs(car.x)<120&&Math.abs(car.z)<120?'INNENSTADT':'WOHNGEBIET';$('place').textContent=district+(road?' · ASPHALT':' · GELÄNDE');
 }
 function updateTraffic(dt){for(let v of traffic){if(v.axis){v.x+=v.dir*v.speed*dt;if(v.x>239)v.x=-239;if(v.x< -239)v.x=239}else{v.z+=v.dir*v.speed*dt;if(v.z>239)v.z=-239;if(v.z< -239)v.z=239}}}
-let resolution=1.65;const eye=[0,0,0],sun=[.44,.81,.39];
-function draw3D(dt){let w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.clientHeight);let dpr=Math.min(window.devicePixelRatio||1,qualityHigh?1.65:1.0),rw=Math.max(1,Math.round(w*dpr)),rh=Math.max(1,Math.round(h*dpr));if(canvas.width!==rw||canvas.height!==rh){canvas.width=rw;canvas.height=rh;gl.viewport(0,0,rw,rh)}
+const eye=[0,0,0],sun=[.44,.81,.39];
+function draw3D(dt){let w=Math.max(1,canvas.clientWidth),h=Math.max(1,canvas.clientHeight);let dpr=Math.min(window.devicePixelRatio||1,qualityHigh?adaptiveResolution.scale:1.0),rw=Math.max(1,Math.round(w*dpr)),rh=Math.max(1,Math.round(h*dpr));if(canvas.width!==rw||canvas.height!==rh){canvas.width=rw;canvas.height=rh;gl.viewport(0,0,rw,rh)}
 let s=Math.sin(car.heading),c=Math.cos(car.heading);let back=cameraMode===0?12:cameraMode===1?-1.3:17,up=cameraMode===0?6.2:cameraMode===1?2.35:26;
 let desired=[car.x-s*back,up,car.z-c*back];let smooth=Math.min(1,dt*(cameraMode===1?10:4.4));for(let i=0;i<3;i++)viewCamera[i]=lerp(viewCamera[i],desired[i],smooth);
 let at=cameraMode===1?[car.x+s*22,1.7,car.z+c*22]:[car.x+s*(cameraMode===2?4:7),cameraMode===2?1.4:1.5,car.z+c*(cameraMode===2?4:7)];let fov=(cameraMode===1?76:cameraMode===2?60:68)*Math.PI/180;
@@ -203,7 +205,7 @@ ctx.fillStyle='#c3bdae';ctx.fillRect(-35-28,35-28,56,56);
 ctx.fillStyle='#d0d4ca';for(let o of obstacles){ctx.fillRect(o.x0,o.z0,o.x1-o.x0,o.z1-o.z0)}
 for(let t of traffic){ctx.fillStyle='#d6c4a6';ctx.fillRect(t.x-1.3,t.z-2.1,2.6,4.2)}ctx.restore();
 ctx.save();ctx.translate(mid,mid);ctx.fillStyle='#f1b961';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,-14);ctx.lineTo(9,11);ctx.lineTo(0,6);ctx.lineTo(-9,11);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();ctx.strokeStyle='#ffffff66';ctx.lineWidth=2;ctx.strokeRect(1,1,W-2,W-2)}
-function frame(t){if(!started)return;let dt=Math.min(.05,Math.max(.001,(t-prev)/1000));prev=t;if(!paused){clock.tick(t,step=>{updateTraffic(step);updatePhysics(step)})}else{clock.reset(t)}draw3D(dt);if(frames++%4===0)drawMap();requestAnimationFrame(frame)}
+function frame(t){if(!started)return;let dt=Math.min(.05,Math.max(.001,(t-prev)/1000));prev=t;if(!paused){clock.tick(t,step=>{updateTraffic(step);updatePhysics(step)})}else{clock.reset(t)}draw3D(dt);if(frames++%4===0)drawMap();if(adaptiveResolution.sample(t)){$('fps').textContent=adaptiveResolution.fps+' FPS'}requestAnimationFrame(frame)}
 // Listen for GPU loss: no broken silent start screen.
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();paused=true;message('GRAFIKKONTEXT VERLOREN – SEITE NEU LADEN')});
 })();
