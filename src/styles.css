@@ -3,3 +3,5 @@
 @media(max-width:500px){.group{gap:5px}.controls{left:7px;right:7px}.ctrl{width:49px;height:54px}.ctrl.accel,.ctrl.brake{width:57px}.meters{bottom:78px}.readout{width:75px}.readout .row{font-size:9px}.logo h1{font-size:13px}.district{top:64px}}@media(max-height:410px){.rightbar{top:110px}.controls{bottom:6px}.meters{bottom:67px;padding:7px 11px}.ctrl{height:48px}.logo p{display:none}}
 
 .primary:disabled{opacity:.75;cursor:wait}
+
+.eyebrow #fps{display:inline-block;margin-left:10px;padding:3px 6px;border:1px solid #ffffff55;border-radius:6px;letter-spacing:.04em;color:#d5fae7;background:#173d3ab3;font-variant-numeric:tabular-nums}
