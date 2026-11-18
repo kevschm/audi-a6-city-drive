@@ -2,6 +2,10 @@ import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
 import { MATERIAL } from './renderer.js';
+import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
+
+const volume = (x, y, z, radius, height) =>
+  ({ minX: x - radius, maxX: x + radius, minZ: z - radius, maxZ: z + radius, minY: y, maxY: y + height });
 
 function buildTrafficCar() {
   const paint = new Mesh(), glass = new Mesh(), trim = new Mesh(), tail = new Mesh();
@@ -30,7 +34,10 @@ function buildTrafficCar() {
 }
 
 export function buildVehicles(renderer) {
-  const avant = Object.fromEntries(['body', 'paint', 'glass', 'wheel', 'tailLights', 'brakeLights', 'reverseLights'].map(name => [name, new Mesh()]));
+  const avant = Object.fromEntries([
+    'body', 'paint', 'glass', 'wheel', 'tailLights', 'brakeLights', 'reverseLights',
+    'headLights', 'leftSignals', 'rightSignals', 'brightwork',
+  ].map(name => [name, new Mesh()]));
   buildAvant(avant);
   const cityCar = buildTrafficCar();
   const contact = new Mesh();
@@ -40,45 +47,72 @@ export function buildVehicles(renderer) {
     mesh.sphere(0, 0, 0, 0.091, 0.091, 0.026, fill, 8, 4);
     return mesh;
   });
-  for (const mesh of [...Object.values(avant), ...Object.values(cityCar), contact, ...lenses]) renderer.upload(mesh);
+  const gateMesh = new Mesh();
+  for (const side of [-1, 1]) {
+    const x = side * GATE_HALF_WIDTH;
+    gateMesh.box(x - 0.038, 0.034, -0.08, x + 0.038, 1.14, 0.08, '#ffc263');
+    gateMesh.box(x - 0.10, 1.07, -0.075, x + 0.10, 1.22, 0.075, '#ffe5aa');
+    gateMesh.quad([x - 0.14, 0.022, -0.45], [x - 0.14, 0.022, 0.42], [x + 0.14, 0.022, 0.42], [x + 0.14, 0.022, -0.45], '#ffc263');
+  }
+  for (let i = -3; i <= 3; i++) {
+    const x = i * 0.59;
+    gateMesh.quad([x - 0.23, 0.024, -0.10], [x - 0.23, 0.024, 0.10], [x + 0.23, 0.024, 0.10], [x + 0.23, 0.024, -0.10], '#ffe5aa');
+  }
+  for (const mesh of [...Object.values(avant), ...Object.values(cityCar), contact, gateMesh, ...lenses]) renderer.upload(mesh);
 
-  function scene(car, traffic, signals, signalColor, showBody, far) {
+  function scene(car, traffic, signals, signalColor, { showBody, far, headlights, blink, dusk, gate }) {
     const objects = [], contacts = [];
     for (const actor of traffic) {
-      if (Math.hypot(actor.x - car.x, actor.z - car.z) > far) continue;
+      const distance = Math.hypot(actor.x - car.x, actor.z - car.z);
+      if (distance > far) continue;
       const model = transform(actor.x, actor.z, actor.heading);
+      const bounds = volume(actor.x, 0, actor.z, 2.88, 1.6);
       objects.push(
-        { mesh: cityCar.paint, model, style: MATERIAL.paint, tint: color(actor.color), castsShadow: true },
-        { mesh: cityCar.trim, model },
-        { mesh: cityCar.glass, model, style: MATERIAL.glass },
-        { mesh: cityCar.tail, model, emission: actor.braking ? 1.2 : 0.25 },
+        { mesh: cityCar.paint, model, bounds, style: MATERIAL.paint, tint: color(actor.color), castsShadow: true },
+        { mesh: cityCar.trim, model, bounds },
+        { mesh: cityCar.glass, model, bounds, style: MATERIAL.glass },
+        { mesh: cityCar.tail, model, bounds, emission: actor.braking ? 1.2 : 0.25 + dusk * 0.31 },
       );
-      if (Math.hypot(actor.x - car.x, actor.z - car.z) < 34) contacts.push({ mesh: contact, model, style: MATERIAL.contact });
+      if (distance < 34) contacts.push({ mesh: contact, model, bounds, style: MATERIAL.contact });
     }
     for (const signal of signals) {
       if (Math.hypot(signal.x - car.x, signal.z - car.z) > 72) continue;
       const phase = signalColor(signal.axis, signal.intersectionX, signal.intersectionZ);
       const index = ['red', 'amber', 'green'].indexOf(phase);
-      objects.push({ mesh: lenses[index], model: transform(signal.x, signal.z, signal.heading, signal.y + (1 - index) * 0.24), emission: 0.48 });
+      objects.push({
+        mesh: lenses[index], model: transform(signal.x, signal.z, signal.heading, signal.y + (1 - index) * 0.24),
+        bounds: volume(signal.x, signal.y - 0.36, signal.z, 0.12, 0.72), emission: 0.48,
+      });
+    }
+    if (gate && Math.hypot(gate.x - car.x, gate.z - car.z) < 125) {
+      objects.push({ mesh: gateMesh, model: transform(gate.x, gate.z, gate.heading), emission: 0.45 + dusk * 0.55 });
     }
     if (showBody) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll, car.pitch);
-      contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading), style: MATERIAL.contact });
+      contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading, Math.max(0, Math.min(car.heave, 0.16))), style: MATERIAL.contact });
       objects.push(
         { mesh: avant.body, model: body, castsShadow: true },
         { mesh: avant.paint, model: body, style: MATERIAL.paint, castsShadow: true },
         { mesh: avant.glass, model: body, style: MATERIAL.glass },
-        { mesh: avant.tailLights, model: body, emission: 0.42 },
-        { mesh: avant.brakeLights, model: body, emission: car.brakeLights ? 2.6 : 0.05 },
-        { mesh: avant.reverseLights, model: body, emission: car.reverseLights ? 1.6 : 0 },
+        { mesh: avant.brightwork, model: body, style: MATERIAL.chrome },
+        { mesh: avant.tailLights, model: body, emission: headlights ? 0.74 : 0.12 },
+        { mesh: avant.brakeLights, model: body, emission: car.brakeLights ? 2.85 : 0.06 },
+        { mesh: avant.reverseLights, model: body, emission: car.reverseLights ? 1.15 : 0 },
+        { mesh: avant.headLights, model: body, emission: headlights ? 0.85 : 0 },
+        { mesh: avant.leftSignals, model: body, emission: blink === -1 ? 2.2 : 0 },
+        { mesh: avant.rightSignals, model: body, emission: blink === 1 ? 2.2 : 0 },
       );
       const chassis = transform(car.x, car.z, car.heading);
-      for (const side of [-1, 1]) {
-        for (const z of [AVANT_WHEELS.front, AVANT_WHEELS.rear]) {
-          const mount = translate(side * AVANT_WHEELS.halfTrack, AVANT_WHEELS.radius, z);
-          const rotation = multiply(rotateY(z > 0 ? car.steer : 0), rotateX(car.spin));
+      let index = 0;
+      for (const z of [AVANT_WHEELS.front, AVANT_WHEELS.rear]) {
+        for (const side of [-1, 1]) {
+          const mount = translate(side * AVANT_WHEELS.halfTrack, AVANT_WHEELS.radius + (car.wheelTravel?.[index] || 0), z);
+          const steer = car.wheelSteer?.[index] ?? (z > 0 ? car.steer : 0);
+          const spin = car.wheelSpin?.[index] ?? car.spin;
+          const rotation = multiply(rotateY(steer), rotateX(spin));
           const model = multiply(chassis, multiply(mount, rotation));
           objects.push({ mesh: avant.wheel, model, castsShadow: true });
+          index++;
         }
       }
     }

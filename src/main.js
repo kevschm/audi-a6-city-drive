@@ -1,11 +1,12 @@
 import { createAdaptiveResolution } from './performance/adaptive-resolution.js';
 import { createFixedStepClock } from './simulation/fixed-step.js';
 import { createVehicleState, stepVehicle, vehicleOverlapsTraffic } from './simulation/vehicle.js';
-import { buildCity, districtAt, halfWorld, roads, roadHalfWidth, roadSurfaceAt, startPosition } from './world/city.js';
+import { createTimeTrial, formatTrialTime } from './simulation/time-trial.js';
+import { buildCity, districtAt, groundHeightAt, halfWorld, roads, roadHalfWidth, roadSurfaceAt, startPosition } from './world/city.js';
 import { makeTraffic } from './world/traffic.js';
-import { lerp, mixAngle } from './render/math.js';
+import { clamp, lerp, mixAngle } from './render/math.js';
 import { Mesh } from './render/mesh.js';
-import { createRenderer } from './render/renderer.js';
+import { createRenderer, GRAPHICS } from './render/renderer.js';
 import { buildVehicles } from './render/vehicles.js';
 import { createMinimap } from './ui/minimap.js';
 import { cameraNames, createCamera } from './ui/camera.js';
@@ -15,17 +16,29 @@ const $ = id => document.getElementById(id);
 const buttons = {
   start: $('startBtn'), camera: $('camBtn'), quality: $('qualityBtn'), audio: $('audioBtn'),
   pause: $('pauseBtn'), resume: $('resumeBtn'), reset: $('resetBtn'),
+  trial: $('trialBtn'), headlights: $('lightBtn'), dusk: $('duskBtn'),
+  leftSignal: $('leftSignal'), rightSignal: $('rightSignal'),
 };
 const keyActions = {
   w: 'throttle', arrowup: 'throttle', s: 'brake', arrowdown: 'brake',
   a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right', ' ': 'handbrake',
 };
 const surfaces = { asphalt: 'Asphalt', paving: 'Pflaster', grass: 'Grünfläche' };
-const qualityModes = ['auto', 'high', 'eco'];
-const qualityNames = ['Auto', 'Hoch', 'Eco'];
-const visualFields = ['x', 'z', 'heave', 'pitch', 'roll', 'steer', 'spin'];
+const qualityModes = ['balanced', 'quality', 'performance'];
+const visualFields = ['x', 'z', 'heave', 'pitch', 'roll', 'steer', 'spin', 'speed', 'yaw'];
+const wheelFields = ['wheelTravel', 'wheelSteer', 'wheelSpin'];
 const rpmFormat = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
 const distanceFormat = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const storage = {
+  read(name) {
+    try { return localStorage.getItem('a6-city.' + name); }
+    catch { return null; }
+  },
+  write(name, value) {
+    try { localStorage.setItem('a6-city.' + name, value); }
+    catch { /* Driving remains available when browser storage is disabled. */ }
+  },
+};
 
 function fail(error) {
   $('intro').classList.add('hidden');
@@ -43,7 +56,7 @@ function boot() {
   for (const chunk of cityChunks) renderer.upload(chunk.mesh);
   const vehicles = buildVehicles(renderer);
   const traffic = makeTraffic(roads, signals);
-  const world = { roads, obstacles, roadSurfaceAt, traffic: traffic.actors, bounds: halfWorld };
+  const world = { roads, obstacles, roadSurfaceAt, groundHeightAt, traffic: traffic.actors, bounds: halfWorld };
   const drawMap = createMinimap($('minimap'), city, roads, roadHalfWidth, halfWorld);
   const camera = createCamera(), clock = createFixedStepClock(), audio = createDriveAudio();
   const touch = matchMedia('(pointer: coarse)').matches;
@@ -52,15 +65,25 @@ function boot() {
     highFpsFactor: touch ? 1.20 : 1.06,
   });
   const car = { ...createVehicleState(), ...startPosition };
-  const previous = { ...car };
-  const visible = { ...car };
+  const previous = { ...car }, visible = { ...car };
+  for (const field of wheelFields) {
+    previous[field] = car[field].slice();
+    visible[field] = car[field].slice();
+  }
+  const trial = createTimeTrial(undefined, Number(storage.read('station-best')));
   const keys = new Set();
   const pointers = new Map();
   const input = { left: false, right: false, throttle: false, brake: false, handbrake: false };
   const controls = [...document.querySelectorAll('[data-key]')];
   let started = false, paused = false, failed = false, audioEnabled = false;
-  let cameraMode = 0, qualityIndex = 0, prevTime = 0, lastHud = -Infinity, collisionAt = -Infinity;
+  const qualityPreference = qualityModes.indexOf(storage.read('quality'));
+  let cameraMode = 0, qualityIndex = Math.max(0, qualityPreference), prevTime = 0, lastHud = -Infinity, collisionAt = -Infinity;
   let raf = 0, toastTimer;
+  let steeringGain = clamp(Number(storage.read('steering')) || 1, 0.65, 1.15);
+  let dusk = storage.read('dusk') === '1' ? 1 : 0, duskTarget = dusk;
+  let headlights = duskTarget > 0, signal = 0, signalTime = 0;
+  let baseInput = { ...input };
+  let gamepadsAvailable = typeof navigator.getGamepads === 'function';
 
   function notify(text) {
     $('toast').textContent = text;
@@ -70,10 +93,37 @@ function boot() {
   }
 
   function updateInput() {
-    for (const name of Object.keys(input)) input[name] = false;
-    for (const key of keys) input[keyActions[key]] = true;
-    for (const button of pointers.values()) input[button.dataset.key] = true;
-    for (const button of controls) button.classList.toggle('active', input[button.dataset.key]);
+    baseInput = { left: 0, right: 0, throttle: 0, brake: 0, handbrake: 0 };
+    for (const key of keys) baseInput[keyActions[key]] = 1;
+    for (const button of pointers.values()) baseInput[button.dataset.key] = 1;
+    for (const button of controls) button.classList.toggle('active', Boolean(baseInput[button.dataset.key]));
+  }
+
+  function readInput() {
+    Object.assign(input, baseInput);
+    let pad;
+    if (gamepadsAvailable && document.hasFocus()) {
+      try { pad = Array.from(navigator.getGamepads()).find(device => device?.connected && device.mapping === 'standard'); }
+      catch { gamepadsAvailable = false; }
+    }
+    if (pad) {
+      const axis = pad.axes[0] || 0;
+      if (Math.abs(axis) > 0.14) {
+        const magnitude = (Math.abs(axis) - 0.14) / 0.86;
+        input[axis < 0 ? 'left' : 'right'] = Math.max(input[axis < 0 ? 'left' : 'right'], magnitude);
+      }
+      input.throttle = Math.max(input.throttle, pad.buttons[7]?.value || 0);
+      input.brake = Math.max(input.brake, pad.buttons[6]?.value || 0);
+      input.handbrake = Math.max(input.handbrake, pad.buttons[0]?.value || 0);
+    }
+    input.left = Math.min(1, input.left * steeringGain);
+    input.right = Math.min(1, input.right * steeringGain);
+  }
+
+  function rememberPose() {
+    for (const field of visualFields) previous[field] = car[field];
+    previous.heading = car.heading;
+    for (const field of wheelFields) for (let i = 0; i < 4; i++) previous[field][i] = car[field][i];
   }
 
   function clearInput() {
@@ -83,15 +133,22 @@ function boot() {
   }
 
   function draw(dt, interpolation = 1) {
-    Object.assign(visible, car);
+    for (const field of ['brakeLights', 'reverseLights']) visible[field] = car[field];
     for (const field of visualFields) visible[field] = lerp(previous[field], car[field], interpolation);
     visible.heading = mixAngle(previous.heading, car.heading, interpolation);
+    for (const field of wheelFields) for (let i = 0; i < 4; i++) visible[field][i] = lerp(previous[field][i], car[field][i], interpolation);
+    dusk = lerp(dusk, duskTarget, 1 - Math.exp(-dt * 2.8));
+    if (Math.abs(dusk - duskTarget) < 0.004) dusk = duskTarget;
     const view = camera.update(visible, cameraMode, dt, obstacles);
     const device = window.devicePixelRatio || 1;
     const quality = qualityModes[qualityIndex];
-    const scale = Math.min(device, quality === 'eco' ? 0.78 : quality === 'high' ? 1.7 : adaptive.scale);
-    const scene = vehicles.scene(visible, traffic.actors, signals, traffic.signalColor, cameraMode !== 2, quality === 'eco' ? 100 : 155);
-    renderer.render({ ...view, scale, quality, chunks: cityChunks, landscape, ...scene, focus: [visible.x, 0, visible.z] });
+    const scale = Math.min(device, adaptive.scale);
+    const blink = signalTime % 0.72 < 0.39 ? signal : 0;
+    const scene = vehicles.scene(visible, traffic.actors, signals, traffic.signalColor, {
+      showBody: true, far: GRAPHICS[quality].trafficDistance, headlights, blink, dusk, gate: trial.gate,
+    });
+    renderer.render({ ...view, scale, quality, chunks: cityChunks, landscape, ...scene,
+      dusk, headlights, heading: visible.heading, focus: [visible.x, visible.heave, visible.z] });
   }
 
   function updateHud() {
@@ -101,14 +158,30 @@ function boot() {
     $('rpmb').style.width = `${Math.min(100, car.rpm / 64)}%`;
     $('dist').textContent = distanceFormat.format(car.km) + ' km';
     $('place').textContent = districtAt(car.x, car.z) + ' · ' + surfaces[car.surface];
-    drawMap(car, traffic.actors);
+    $('leftSignal').classList.toggle('lit', signal < 0 && signalTime % 0.72 < 0.39);
+    $('rightSignal').classList.toggle('lit', signal > 0 && signalTime % 0.72 < 0.39);
+    drawMap(car, traffic.actors, trial.gate);
+    const phase = trial.phase;
+    $('routePanel').hidden = phase === 'free';
+    if (phase !== 'free') {
+      $('trialPhase').textContent = phase === 'ready' ? 'Zum Starttor' : phase === 'finished'
+        ? trial.record ? 'Neue Bestzeit' : 'Runde beendet' : 'Tor ' + trial.index + ' / ' + trial.total;
+      $('trialTime').textContent = formatTrialTime(trial.elapsed);
+      $('trialBest').textContent = trial.best === null ? '' : 'Bestzeit ' + formatTrialTime(trial.best);
+    }
   }
 
   function update(dt, time) {
-    for (const field of visualFields) previous[field] = car[field];
-    previous.heading = car.heading;
+    rememberPose();
     traffic.step(dt, car, vehicleOverlapsTraffic, roadHalfWidth);
     stepVehicle(car, input, dt, world);
+    signalTime += dt;
+    const result = trial.step(dt, previous, car);
+    if (result && audioEnabled) audio.chime(result === 'finish');
+    if (result === 'finish') {
+      if (trial.record) storage.write('station-best', trial.best);
+      updateTrialButton();
+    }
     if (car.collisionImpact > 1.6 && time - collisionAt > 540) {
       notify('Kollision');
       if (audioEnabled) audio.impact(car.collisionImpact);
@@ -121,11 +194,12 @@ function boot() {
     if (!started || paused || failed || document.hidden) return;
     const dt = Math.min(0.06, Math.max(0.001, (time - prevTime) / 1000));
     prevTime = time;
+    readInput();
     const result = clock.tick(time, step => update(step, time));
     draw(dt, result.interpolation);
     if (time - lastHud >= 90) {
       updateHud();
-      if (audioEnabled) audio.update(car, Number(input.throttle), true);
+      if (audioEnabled) audio.update(car, input.throttle, true, cameraMode === 2);
       lastHud = time;
     }
     if (adaptive.sample(time)) $('fps').textContent = adaptive.fps + ' FPS';
@@ -180,15 +254,47 @@ function boot() {
     }
   }
 
-  function reset() {
+  function reset(announce = true) {
     Object.assign(car, createVehicleState(), startPosition);
-    Object.assign(previous, car);
+    rememberPose();
     collisionAt = -Infinity;
     camera.reset();
+    clock.reset();
     clearInput();
     updateHud();
     draw(0.016);
-    notify('Fahrzeug am Start');
+    if (announce) notify('Fahrzeug am Start');
+  }
+
+  function resetDrive() {
+    if (trial.phase === 'free') reset();
+    else armTrial();
+  }
+
+  function armTrial() {
+    trial.arm();
+    traffic.restart();
+    reset(false);
+    updateTrialButton();
+  }
+
+  function switchTrial() {
+    if (!started || paused || failed) return;
+    if (trial.phase === 'free' || trial.phase === 'finished') {
+      armTrial();
+      notify('Bahnhofsrunde · Zum Starttor fahren');
+    } else {
+      trial.cancel();
+      notify('Freie Fahrt');
+    }
+    updateTrialButton();
+    updateHud();
+  }
+
+  function updateTrialButton() {
+    const active = trial.phase === 'ready' || trial.phase === 'running';
+    buttons.trial.setAttribute('aria-pressed', String(active));
+    buttons.trial.querySelector('span').textContent = active ? 'Abbrechen' : trial.phase === 'finished' ? 'Wiederholen' : 'Zeitfahrt';
   }
 
   function switchCamera() {
@@ -203,8 +309,36 @@ function boot() {
     if (!started || paused || failed) return;
     qualityIndex = (qualityIndex + 1) % qualityModes.length;
     adaptive.reset();
-    buttons.quality.querySelector('span').textContent = qualityNames[qualityIndex];
-    notify('Grafik · ' + qualityNames[qualityIndex]);
+    const quality = qualityModes[qualityIndex];
+    storage.write('quality', quality);
+    buttons.quality.querySelector('span').textContent = GRAPHICS[quality].label;
+    notify('Grafik · ' + GRAPHICS[quality].label);
+  }
+
+  function setHeadlights(value) {
+    headlights = value;
+    buttons.headlights.setAttribute('aria-pressed', String(value));
+    buttons.headlights.querySelector('span').textContent = value ? 'Licht an' : 'Licht aus';
+  }
+
+  function setSignal(direction) {
+    if (!started || paused || failed) return;
+    signal = signal === direction ? 0 : direction;
+    signalTime = 0;
+    buttons.leftSignal.setAttribute('aria-pressed', String(signal < 0));
+    buttons.rightSignal.setAttribute('aria-pressed', String(signal > 0));
+    updateHud();
+  }
+
+  function switchDusk() {
+    duskTarget = 1 - duskTarget;
+    storage.write('dusk', duskTarget);
+    buttons.dusk.textContent = duskTarget ? 'Abend' : 'Tag';
+    setHeadlights(Boolean(duskTarget));
+    if (paused) {
+      dusk = duskTarget;
+      draw(0.016);
+    }
   }
 
   buttons.start.addEventListener('click', start);
@@ -213,7 +347,26 @@ function boot() {
   buttons.audio.addEventListener('click', () => setAudio(!audioEnabled));
   buttons.pause.addEventListener('click', () => setPaused(true));
   buttons.resume.addEventListener('click', () => setPaused(false));
-  buttons.reset.addEventListener('click', () => { reset(); setPaused(false); });
+  buttons.reset.addEventListener('click', () => { resetDrive(); setPaused(false); });
+  buttons.headlights.addEventListener('click', () => setHeadlights(!headlights));
+  buttons.trial.addEventListener('click', switchTrial);
+  buttons.dusk.addEventListener('click', switchDusk);
+  buttons.leftSignal.addEventListener('click', () => setSignal(-1));
+  buttons.rightSignal.addEventListener('click', () => setSignal(1));
+  $('steeringGain').value = steeringGain;
+  $('steeringGain').addEventListener('input', event => {
+    steeringGain = Number(event.target.value);
+    storage.write('steering', steeringGain);
+  });
+  $('audioVolume').value = clamp(Number(storage.read('volume') ?? 0.75), 0, 1);
+  audio.setVolume(Number($('audioVolume').value));
+  $('audioVolume').addEventListener('input', event => {
+    audio.setVolume(Number(event.target.value));
+    storage.write('volume', event.target.value);
+  });
+  buttons.quality.querySelector('span').textContent = GRAPHICS[qualityModes[qualityIndex]].label;
+  buttons.dusk.textContent = duskTarget ? 'Abend' : 'Tag';
+  setHeadlights(headlights);
   window.addEventListener('keydown', event => {
     if (!started || failed || event.ctrlKey || event.metaKey || event.altKey) return;
     const key = event.key.toLowerCase();
@@ -224,7 +377,11 @@ function boot() {
     }
     if (event.repeat) return;
     if (key === 'v') switchCamera();
-    if (key === 'r' && !paused) reset();
+    if (key === 'r' && !paused) resetDrive();
+    if (key === 't') switchTrial();
+    if (key === 'l' && !paused) setHeadlights(!headlights);
+    if (key === 'q') setSignal(-1);
+    if (key === 'e') setSignal(1);
     if (key === 'p' || key === 'escape') setPaused(!paused);
   });
   window.addEventListener('keyup', event => {

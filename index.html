@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#151b1b">
+  <meta name="game-version" content="0.5.0">
   <title>Audi A6 City Drive</title>
   <link rel="stylesheet" href="./src/styles.css">
 </head>
@@ -21,11 +22,18 @@
       <canvas id="minimap" width="280" height="280" aria-label="Minikarte"></canvas>
       <div class="actions">
         <button id="camBtn" type="button" title="Kamera wechseln (V)"><b aria-hidden="true">◉</b><span>Verfolger</span></button>
-        <button id="qualityBtn" type="button" title="Grafikqualität wechseln" aria-label="Grafikqualität wechseln"><b aria-hidden="true">◫</b><span>Auto</span></button>
+        <button id="qualityBtn" type="button" title="Grafikqualität wechseln" aria-label="Grafikqualität wechseln"><b aria-hidden="true">◫</b><span>Balanced</span></button>
         <button id="audioBtn" type="button" title="Ton einschalten" aria-pressed="false"><b aria-hidden="true">♪</b><span>Ton aus</span></button>
         <button id="pauseBtn" type="button" title="Spiel pausieren (P)"><b aria-hidden="true">Ⅱ</b><span>Pause</span></button>
+        <button id="lightBtn" type="button" title="Scheinwerfer (L)" aria-pressed="false"><b aria-hidden="true">✦</b><span>Licht aus</span></button>
+        <button id="trialBtn" type="button" title="Bahnhofsrunde (T)" aria-pressed="false"><b aria-hidden="true">◴</b><span>Zeitfahrt</span></button>
       </div>
     </aside>
+
+    <section id="routePanel" class="route panel" aria-label="Bahnhofsrunde" hidden>
+      <div><b>Bahnhofsrunde</b><span id="trialPhase">Zum Starttor</span></div>
+      <div><b id="trialTime">0:00,00</b><span id="trialBest"></span></div>
+    </section>
 
     <section class="cluster panel" aria-label="Instrumente">
       <div class="speed"><span id="speed">0</span><small>km/h</small></div>
@@ -34,9 +42,13 @@
         <div class="rev"><i id="rpmb"></i></div>
         <div class="telemetry"><small id="dist">0,0 km</small><small id="fps" aria-label="Bildrate">– FPS</small></div>
       </div>
+      <div class="indicators" aria-label="Blinker">
+        <button id="leftSignal" type="button" title="Links blinken (Q)" aria-label="Links blinken" aria-pressed="false">←</button>
+        <button id="rightSignal" type="button" title="Rechts blinken (E)" aria-label="Rechts blinken" aria-pressed="false">→</button>
+      </div>
     </section>
 
-    <div class="help panel"><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> Fahren</span><span><kbd>Leertaste</kbd> Handbremse</span><span><kbd>V</kbd> Kamera · <kbd>R</kbd> Neustart · <kbd>P</kbd> Pause</span></div>
+    <div class="help panel"><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> Fahren</span><span><kbd>Leertaste</kbd> Handbremse · <kbd>Q / E</kbd> Blinker</span><span><kbd>V</kbd> Kamera · <kbd>R</kbd> Neustart · <kbd>P</kbd> Pause</span></div>
     <div id="toast" class="toast panel" role="status"></div>
 
     <div class="controls" aria-label="Touch-Steuerung">
@@ -61,10 +73,18 @@
       </section>
     </div>
     <div class="modal hidden" id="pauseModal">
-      <section class="sheet" aria-labelledby="pauseTitle">
+      <section class="sheet" aria-labelledby="pauseTitle" role="dialog" aria-modal="true">
         <h2 id="pauseTitle">Fahrt pausiert</h2>
-        <button class="primary" type="button" id="resumeBtn">Weiterfahren</button>
-        <button class="secondary" type="button" id="resetBtn">Am Start neu beginnen</button>
+        <div class="settings">
+          <div class="setting"><span>Tageszeit</span><button id="duskBtn" type="button" aria-label="Tageszeit wechseln">Tag</button></div>
+          <label class="setting" for="steeringGain"><span>Lenkempfindlichkeit</span><input id="steeringGain" type="range" min="0.65" max="1.15" step="0.05" value="1"></label>
+          <label class="setting" for="audioVolume"><span>Lautstärke</span><input id="audioVolume" type="range" min="0" max="1" step="0.05" value="0.75"></label>
+        </div>
+        <div class="pause-actions">
+          <button class="primary" type="button" id="resumeBtn">Weiterfahren</button>
+          <button class="secondary" type="button" id="resetBtn">Neu beginnen</button>
+        </div>
+        <p class="pause-help">Gamepad mit Standardbelegung · linker Stick, RT, LT und A</p>
       </section>
     </div>
     <div class="modal hidden" id="errorModal">

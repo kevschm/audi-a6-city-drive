@@ -143,8 +143,26 @@ try {
   await press('v');
   assert.equal(await evaluate(`document.querySelector('#camBtn span').textContent`), 'Motorhaube');
   await click('#qualityBtn');
+  assert.equal(await evaluate(`document.querySelector('#qualityBtn span').textContent`), 'Quality');
+  await press('v');
+  assert.equal(await evaluate(`document.querySelector('#camBtn span').textContent`), 'Frontansicht');
+  await press('p');
+  await click('#duskBtn');
+  assert.equal(await evaluate(`document.getElementById('duskBtn').textContent`), 'Abend');
+  await click('#resumeBtn');
+  await waitFor('Evening headlights', () => evaluate(`document.getElementById('lightBtn').getAttribute('aria-pressed') === 'true'`));
+  await press('q');
+  assert.equal(await evaluate(`document.getElementById('leftSignal').getAttribute('aria-pressed')`), 'true');
+  await snap('a6-v05-abend');
+  await press('q');
+  await press('l');
+  assert.equal(await evaluate(`document.getElementById('lightBtn').getAttribute('aria-pressed')`), 'false');
+  await press('p');
+  await click('#duskBtn');
+  await click('#resumeBtn');
+  await press('v');
   await click('#qualityBtn');
-  assert.equal(await evaluate(`document.querySelector('#qualityBtn span').textContent`), 'Eco');
+  assert.equal(await evaluate(`document.querySelector('#qualityBtn span').textContent`), 'Performance');
   await press('p');
   assert.equal(await evaluate(`document.getElementById('pauseModal').classList.contains('hidden')`), false);
   const stopped = (await inspect()).speed;
@@ -158,6 +176,19 @@ try {
   await toggleKey('s', false);
   await click('#audioBtn');
   assert.equal(await evaluate(`document.getElementById('audioBtn').getAttribute('aria-pressed')`), 'false');
+  await press('t');
+  assert.equal(await evaluate(`document.getElementById('trialPhase').textContent`), 'Zum Starttor');
+  await toggleKey('w', true);
+  await waitFor('Station course start and first checkpoint', () => evaluate(`document.getElementById('trialPhase').textContent.startsWith('Tor 2')`));
+  await toggleKey('w', false);
+  await press('p');
+  const stationRound = await evaluate(`document.getElementById('trialTime').textContent`);
+  assert.notEqual(stationRound, '0:00,00');
+  await delay(240);
+  assert.equal(await evaluate(`document.getElementById('trialTime').textContent`), stationRound);
+  await click('#resumeBtn');
+  await click('#trialBtn');
+  assert.equal(await evaluate(`document.getElementById('routePanel').hidden`), true);
 
   await send('Emulation.setDeviceMetricsOverride', {
     width: 915, height: 412, deviceScaleFactor: 2.625, mobile: true,
@@ -165,6 +196,7 @@ try {
   });
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await open();
+  assert.equal(await evaluate(`document.querySelector('#qualityBtn span').textContent`), 'Performance');
   const [start] = await points('#startBtn');
   await touch('touchStart', [{ ...start, id: 1 }]);
   await touch('touchEnd', []);
@@ -189,7 +221,7 @@ try {
   await snap('a6-querformat');
   assert.deepEqual(exceptions, []);
   assert.deepEqual(failedResources, []);
-  console.log(JSON.stringify({ gpu, desktop, mobile, exceptions, failedResources }, null, 2));
+  console.log(JSON.stringify({ gpu, desktop, stationRound, mobile, exceptions, failedResources }, null, 2));
 } catch (error) {
   console.error(error);
   console.error({ exceptions, failedResources, browserLog });

@@ -2,8 +2,8 @@
 export const AVANT_WHEELS = Object.freeze({ halfTrack: .759, radius: .315, front: 1.39, rear: -1.30 });
 
 const rgb = (r, g, b) => [r / 255, g / 255, b / 255];
-const lacquer = rgb(25, 30, 36);
-const paintEdge = rgb(29, 34, 41);
+const lacquer = rgb(19, 23, 28);
+const paintEdge = rgb(23, 28, 34);
 const rubber = rgb(23, 25, 27);
 const seal = rgb(15, 19, 23);
 const molding = rgb(32, 36, 39);
@@ -15,6 +15,10 @@ const tau = Math.PI * 2;
 const sides = [-1, 1];
 
 function face(mesh, outward, color, ...points) {
+  panel(mesh, outward, color, points);
+}
+
+function panel(mesh, outward, color, points, normalAt, material) {
   points = points.filter((point, index) => point.some((value, axis) => Math.abs(value - points[(index + 1) % points.length][axis]) > 1e-7));
   if (points.length < 3) return;
   const [a, b, c] = points;
@@ -23,12 +27,26 @@ function face(mesh, outward, color, ...points) {
   const normalDirection = outward[0] * (y * w - z * v)
     + outward[1] * (z * u - x * w) + outward[2] * (x * v - y * u);
   if (normalDirection < 0) points.reverse();
-  if (points.length === 3) mesh.tri(...points, color);
-  else mesh.quad(...points, color);
+  const normals = normalAt && points.map(normalAt);
+  if (points.length === 3) mesh.tri(...points, color, material, normals);
+  else mesh.quad(...points, color, material, normals);
 }
 
 const lerp = (a, b, amount) => a + (b - a) * amount;
 const pointBetween = (a, b, amount) => a.map((v, i) => lerp(v, b[i], amount));
+
+function surfaceNormal(point, a, b, outward) {
+  const step = .0005;
+  const da0 = point(a - step, b), da1 = point(a + step, b);
+  const db0 = point(a, b - step), db1 = point(a, b + step);
+  const [ax, ay, az] = da1.map((value, axis) => value - da0[axis]);
+  const [bx, by, bz] = db1.map((value, axis) => value - db0[axis]);
+  const normal = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+  const length = Math.hypot(...normal);
+  if (!length) return outward;
+  const orientation = normal.reduce((sum, value, axis) => sum + value * outward[axis], 0) < 0 ? -1 : 1;
+  return normal.map(value => orientation * value / length);
+}
 
 // Ribbon projected onto a panel, used for gaskets, shut lines, and pressed creases.
 function trace(mesh, points, width, outward, color) {
@@ -66,7 +84,8 @@ const sillHeight = .235;
 
 function bodySection(z) {
   const right = stations.findIndex(s => s[0] >= z);
-  if (right < 1) return stations[Math.max(0, right)];
+  if (right < 0) return stations.at(-1);
+  if (!right) return stations[0];
   const left = stations[right - 1], end = stations[right];
   return pointBetween(left, end, (z - left[0]) / (end[0] - left[0]));
 }
@@ -80,8 +99,8 @@ function wheelOpening(z) {
 function flankPoint(side, z, y) {
   const [, sill, flank, shoulder, shoulderY] = bodySection(z);
   const widestY = .735;
-  const width = y <= widestY ? lerp(sill, flank, (y - sillHeight) / (widestY - sillHeight))
-    : lerp(flank, shoulder, (y - widestY) / (shoulderY - widestY));
+  const width = y <= widestY ? lerp(sill, flank, 1 - (1 - (y - sillHeight) / (widestY - sillHeight)) ** 1.55)
+    : lerp(flank, shoulder, ((y - widestY) / (shoulderY - widestY)) ** 1.35);
   return [side * width, y, z];
 }
 
@@ -94,11 +113,16 @@ function bodyPoint(side, z, y) {
 function flankTrace(mesh, side, points, width, color) {
   for (let i = 1; i < points.length; i++) {
     const [z0, y0] = points[i - 1], [z1, y1] = points[i];
-    const cuts = [0, 1, (.735 - y0) / (y1 - y0), ...stations.map(([z]) => (z - z0) / (z1 - z0))];
+    const cuts = [0, .2, .4, .6, .8, 1, (.735 - y0) / (y1 - y0), ...stations.map(([z]) => (z - z0) / (z1 - z0))];
     const path = cuts.filter(t => t >= 0 && t <= 1).sort((a, b) => a - b)
       .map(t => bodyPoint(side, lerp(z0, z1, t), lerp(y0, y1, t)));
     trace(mesh, path, width, [side, 0, 0], color);
   }
+}
+
+function deckPoint(side, z, fraction) {
+  const [, , , width, height, crown] = bodySection(z);
+  return [side * width * fraction, crown - (crown - height) * Math.abs(fraction) ** 2.1, z];
 }
 
 function buildShell(body, paint) {
@@ -111,18 +135,31 @@ function buildShell(body, paint) {
 
   for (let i = 1; i < longitudinal.length; i++) {
     const za = longitudinal[i - 1], zb = longitudinal[i];
-    const [, , , wa, ya, ca] = bodySection(za), [, , , wb, yb, cb] = bodySection(zb);
+    const [, , , , ya] = bodySection(za), [, , , , yb] = bodySection(zb);
     for (const side of sides) {
       const out = [side, 0, 0];
-      const a = flankPoint(side, za, wheelOpening(za)), b = flankPoint(side, zb, wheelOpening(zb));
       const crease = .735;
-      face(paint, out, lacquer, a, b, flankPoint(side, zb, crease), flankPoint(side, za, crease));
-      face(paint, [side, .35, 0], paintEdge, flankPoint(side, za, crease), flankPoint(side, zb, crease), [side * wb, yb, zb], [side * wa, ya, za]);
+      const lowA = wheelOpening(za), lowB = wheelOpening(zb);
+      const flank = (z, y) => flankPoint(side, z, y);
+      const flankNormal = ([, y, z]) => surfaceNormal(flank, z, y, out);
+      const levelsA = [lowA, lerp(lowA, crease, .52), crease, lerp(crease, ya, .55), ya];
+      const levelsB = [lowB, lerp(lowB, crease, .52), crease, lerp(crease, yb, .55), yb];
+      for (let level = 1; level < levelsA.length; level++) {
+        panel(paint, out, lacquer, [flank(za, levelsA[level - 1]), flank(zb, levelsB[level - 1]),
+          flank(zb, levelsB[level]), flank(za, levelsA[level])], flankNormal);
+      }
+      const a = flank(za, lowA), b = flank(zb, lowB);
       // Rolled inner lip follows the real wheel cutout, with dark inner fenders.
       const behind = point => [point[0] - side * .064, point[1] - .008, point[2]];
       face(body, [0, -1, 0], seal, a, behind(a), behind(b), b);
-      face(paint, [0, 1, 0], lacquer, [side * wa, ya, za], [side * wb, yb, zb], [side * .58 * wb, cb - .016, zb], [side * .58 * wa, ca - .016, za]);
-      face(paint, [0, 1, 0], paintEdge, [side * .58 * wa, ca - .016, za], [side * .58 * wb, cb - .016, zb], [0, cb, zb], [0, ca, za]);
+      const up = [0, 1, 0];
+      const deck = (z, fraction) => deckPoint(side, z, fraction);
+      const deckNormal = ([x, , z]) => surfaceNormal(deck, z, Math.abs(x) / bodySection(z)[3], up);
+      const fractions = [0, .32, .59, .82, 1];
+      for (let strip = 1; strip < fractions.length; strip++) {
+        const from = fractions[strip - 1], to = fractions[strip];
+        panel(paint, up, paintEdge, [deck(za, from), deck(zb, from), deck(zb, to), deck(za, to)], deckNormal);
+      }
       const trimY = .714;
       trace(body, [bodyPoint(side, za, trimY), bodyPoint(side, zb, trimY)], .029, out, molding);
       if (wheelOpening((za + zb) / 2) === sillHeight) {
@@ -134,7 +171,11 @@ function buildShell(body, paint) {
   for (const end of sides) {
     const z = end * 2.39, [, low, , topWidth, top, crown] = bodySection(z);
     const out = [0, 0, end];
-    face(paint, out, lacquer, [-low, sillHeight, z], [low, sillHeight, z], [topWidth, top, z], [-topWidth, top, z]);
+    const sillZ = z - end * .075;
+    face(paint, out, lacquer, [-low, sillHeight, sillZ], [low, sillHeight, sillZ], [topWidth, top, z], [-topWidth, top, z]);
+    for (const side of sides) {
+      face(body, [side, 0, 0], seal, [side * low, sillHeight, sillZ], [side * low, sillHeight, z], [side * topWidth, top, z]);
+    }
     face(paint, out, paintEdge, [-topWidth, top, z], [topWidth, top, z], [0, crown, z]);
     bumper(paint, body, end);
   }
@@ -153,9 +194,12 @@ function buildShell(body, paint) {
       });
       face(body, out, rgb(70, 75, 78), ...handle(.934), ...handle(.921).reverse());
     }
-    trace(body, [[side * .758, 1.059, 1.04], [side * .572, 1.042, 1.64], [side * .494, .963, 2.26]], .011, [0, 1, 0], lacquer);
-    const badge = bodyPoint(side, 1.815, .827);
-    trace(body, [[badge[0], badge[1], badge[2]], [badge[0] - side * .004, badge[1] + .002, badge[2] + .062]], .031, out, rgb(208, 153, 75));
+    const bonnetShutLine = [[1.15, .95], [1.43, .896], [1.96, .84], [2.2, .82], [2.33, .81], [2.376, .79]].map(([z, t]) => {
+      const point = deckPoint(side, z, t);
+      point[1] += .0045;
+      return point;
+    });
+    trace(body, bonnetShutLine, .007, [0, 1, 0], seal);
   }
 }
 
@@ -190,16 +234,28 @@ function cabinPoint(side, section, height, offset = 0) {
   return [side * (lerp(w0, w1, height) + offset), lerp(y0, y1, height), lerp(z0, z1, height)];
 }
 
-function buildCabin(body, paint, glass) {
+function buildCabin(body, paint, glass, brightwork) {
   for (let i = 1; i < cabinLine.length; i++) {
     const a = cabinLine[i - 1], b = cabinLine[i];
     for (const side of sides) {
       const out = [side, .37, 0];
       face(paint, out, lacquer, cabinPoint(side, a, 0), cabinPoint(side, b, 0), cabinPoint(side, b, 1), cabinPoint(side, a, 1));
-      const edgeA = cabinPoint(side, a, 1), edgeB = cabinPoint(side, b, 1);
-      const roof = v => [v[0] * .84, v[1] + .026, v[2]];
-      face(paint, [0, 1, 0], paintEdge, edgeA, edgeB, roof(edgeB), roof(edgeA));
-      face(paint, [0, 1, 0], lacquer, roof(edgeA), roof(edgeB), [.0, edgeB[1] + .035, edgeB[2]], [.0, edgeA[1] + .035, edgeA[2]]);
+      const roof = (section, fraction) => {
+        const [, z, , y, , width] = section;
+        return [side * width * fraction, y + .035 * (1 - fraction ** 6.3), z];
+      };
+      const slope = point => {
+        const station = point[2] === a[1] ? a : b;
+        const across = point[0] / station[5];
+        const longitudinal = (b[3] - a[3]) / (b[1] - a[1]);
+        const normal = [Math.sign(across) * .32 * Math.abs(across) ** 5.3, 1, -longitudinal];
+        return normal.map(value => value / Math.hypot(...normal));
+      };
+      const fractions = [0, .69, .84, .94, 1];
+      for (let strip = 1; strip < fractions.length; strip++) {
+        const inner = fractions[strip - 1], outer = fractions[strip];
+        panel(paint, [0, 1, 0], lacquer, [roof(a, inner), roof(b, inner), roof(b, outer), roof(a, outer)], slope);
+      }
     }
   }
   for (const side of sides) {
@@ -219,7 +275,8 @@ function buildCabin(body, paint, glass) {
         const left = i === 1 ? b : a, right = i === sections.length - 1 ? a : b;
         face(glass, out, blackGlass, windowPoint(a, left, .121), windowPoint(b, right, .121), windowPoint(b, right, .57), windowPoint(a, left, .57));
         face(glass, out, glassTop, windowPoint(a, left, .57), windowPoint(b, right, .57), windowPoint(b, right, .855), windowPoint(a, left, .855));
-        trace(body, [f(a, .074, .008), f(b, .074, .008)], .011, out, nickel);
+        trace(brightwork, [f(a, .074, .008), f(b, .074, .008)], .011, out, nickel);
+        trace(body, [f(a, .92, .005), f(b, .92, .005)], .012, out, molding);
       }
     }
 
@@ -230,7 +287,7 @@ function buildCabin(body, paint, glass) {
       body.box(railX - .031, 1.405 + pos, z - .059, railX + .031, 1.471 + pos, z + .049, molding);
     }
     const rail = [[railX, 1.424, -1.811], [railX, 1.488, -1.56], [railX, 1.498, -.67], [railX, 1.484, .218], [railX, 1.431, .393]];
-    sweep(body, rail, .025, 6, rgb(83, 89, 93));
+    sweep(brightwork, rail, .025, 8, rgb(64, 68, 72));
 
     // Folded mirrors and blue-grey mirror glass insert.
     sweep(body, [[side * .774, 1.091, .834], [side * .89, 1.101, .805]], .045, 6, molding);
@@ -239,7 +296,7 @@ function buildCabin(body, paint, glass) {
     face(paint, [0, 1, 0], paintEdge, shell(.859, 1.166, .856), shell(.991, 1.159, .832), shell(1.016, 1.149, .762), shell(.855, 1.167, .757));
     face(paint, [side, 0, 0], lacquer, shell(1.001, 1.074, .836), shell(1.012, 1.076, .765), shell(1.016, 1.149, .762), shell(.991, 1.159, .832));
     face(body, [0, 0, -1], seal, shell(.852, 1.062, .757), shell(1.012, 1.076, .765), shell(1.016, 1.149, .762), shell(.855, 1.167, .757));
-    face(glass, [0, 0, -1], glassTop, shell(.866, 1.077, .748), shell(.998, 1.087, .756), shell(1.002, 1.138, .754), shell(.867, 1.153, .748));
+    face(brightwork, [0, 0, -1], glassTop, shell(.866, 1.077, .748), shell(.998, 1.087, .756), shell(1.002, 1.138, .754), shell(.867, 1.153, .748));
   }
 
   for (const end of sides) buildWindscreen(body, paint, glass, end);
@@ -302,9 +359,11 @@ const glyphs = {
   K: [[[0, 0], [0, 1]], [[0, .48], [.9, 1]], [[0, .48], [1, 0]]],
   L: [[[0, 1], [0, 0], [1, 0]]],
   A: [[[0, 0], [.5, 1], [1, 0]], [[.25, .47], [.75, .47]]],
+  2: [[[.02, .79], [.20, .96], [.76, .96], [.95, .79], [.92, .61], [.06, .12], [.06, .02], [.98, .02]]],
   6: [[[.95, .91], [.31, .95], [.03, .65], [.03, .17], [.25, .02], [.8, .02], [.96, .15], [.96, .42], [.73, .55], [.06, .52]]],
   0: [[[.2, .02], [.77, .02], [.96, .24], [.96, .82], [.77, .98], [.2, .98], [.03, .82], [.03, .24], [.2, .02]]],
   4: [[[.78, 0], [.78, 1], [.01, .29], [1, .29]]],
+  8: [[[.22, .47], [.06, .64], [.06, .84], [.26, .98], [.73, .98], [.93, .85], [.93, .63], [.78, .49], [.23, .47], [.06, .31], [.06, .14], [.27, .02], [.74, .02], [.95, .15], [.95, .32], [.78, .49]]],
 };
 
 function plate(body, end, y) {
@@ -344,46 +403,105 @@ function lampPanel(mesh, outward, point, bend, color, x0, x1, y0, y1, y2, y3, de
   }
 }
 
-function buildLighting(body, tailLights, brakeLights, reverseLights) {
+function lensEllipse(mesh, point, outward, x, y, rx, ry, depth, color, segments = 16) {
+  const center = point(x, y, depth + .002);
+  const perimeter = i => point(x + Math.cos(tau * i / segments) * rx, y + Math.sin(tau * i / segments) * ry, depth);
+  for (let i = 0; i < segments; i++) face(mesh, outward, color, center, perimeter(i), perimeter(i + 1));
+}
+
+function buildHatch(body, paint, brightwork) {
+  const out = [0, 0, -1];
+  const hatch = (x, y, depth) => [x, y, -depth];
+  const inset = (x, y) => hatch(x, y, 2.397);
+  face(body, out, rgb(25, 28, 31), inset(-.433, .686), inset(.433, .686), inset(.395, .852), inset(-.395, .852));
+  face(paint, out, lacquer, hatch(-.482, .698, 2.413), inset(-.431, .694), inset(-.393, .851), hatch(-.471, .879, 2.414));
+  face(paint, out, lacquer, inset(.431, .694), hatch(.482, .698, 2.413), hatch(.471, .879, 2.414), inset(.393, .851));
+  face(paint, out, lacquer, hatch(-.471, .879, 2.414), hatch(.471, .879, 2.414), hatch(.466, .930, 2.391), hatch(-.466, .930, 2.391));
+  face(paint, out, paintEdge, hatch(-.466, .930, 2.391), hatch(.466, .930, 2.391), hatch(.439, 1.019, 2.329), hatch(-.439, 1.019, 2.329));
+  face(body, [0, -1, -1], molding, hatch(-.402, .851, 2.399), hatch(.402, .851, 2.399), hatch(.467, .869, 2.415), hatch(-.467, .869, 2.415));
+  const grip = (x, y) => hatch(x, y, 2.417);
+  trace(body, [grip(-.118, .867), grip(.118, .867)], .014, out, seal);
+  trace(brightwork, [hatch(-.298, .881, 2.416), hatch(.298, .881, 2.416)], .007, out, rgb(106, 116, 125));
+  const letter = (glyph, left, y, size) => {
+    for (const path of glyphs[glyph]) {
+      const stroke = path.map(([x, height]) => hatch(left + x * size * .60, y + height * size, 2.394 - height * .027));
+      trace(brightwork, stroke, .0028, out, chrome);
+    }
+  };
+  letter('A', -.412, .931, .035);
+  letter('6', -.385, .931, .035);
+  letter('2', .337, .932, .028);
+  letter('8', .366, .932, .028);
+  trace(brightwork, [hatch(.359, .934, 2.396), hatch(.361, .934, 2.396)], .003, out, chrome);
+}
+
+function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeLights, reverseLights, leftSignals, rightSignals }) {
   const grilleEdge = [0, 0, 1];
   const front = (x, y, z) => [x, y, z];
-  face(body, grilleEdge, nickel, front(-.334, .751, 2.396), front(.334, .751, 2.396), front(.361, .895, 2.396), front(-.361, .895, 2.396));
+  face(brightwork, grilleEdge, nickel, front(-.334, .751, 2.396), front(.334, .751, 2.396), front(.361, .895, 2.396), front(-.361, .895, 2.396));
   face(body, grilleEdge, seal, front(-.321, .762, 2.402), front(.321, .762, 2.402), front(.347, .884, 2.402), front(-.347, .884, 2.402));
   for (let i = 0; i < 6; i++) {
     const y = .775 + i * .018;
     trace(body, [front(-.315, y, 2.406), front(.315, y, 2.406)], .006, grilleEdge, rgb(77, 85, 92));
   }
-  rings(body, 1, .838, 2.413);
-  rings(body, -1, .981, 2.371);
+  const grilleTrim = [front(-.338, .752, 2.407), front(.338, .752, 2.407), front(.359, .889, 2.407), front(-.359, .889, 2.407)];
+  trace(brightwork, [...grilleTrim, grilleTrim[0]], .009, grilleEdge, chrome);
+  rings(brightwork, 1, .838, 2.417);
+  buildHatch(body, paint, brightwork);
+  rings(brightwork, -1, .977, 2.370);
   plate(body, 1, .507);
   plate(body, -1, .772);
 
   for (const side of sides) {
+    const indicator = side < 0 ? leftSignals : rightSignals;
+    const amberGlass = rgb(154, 91, 38), amberRib = rgb(110, 62, 31);
     const hd = (x, y, z) => [x * side, y, z];
     const frontOut = [side * .32, 0, 1];
-    const lamp = (x, y, depth = 0) => hd(x, y, 2.395 - Math.max(0, x - .59) * .385 + depth);
+    const lamp = (x, y, depth = 0) => hd(x, y, 2.395 - Math.max(0, x - .59) * .33 + depth);
     lampPanel(body, frontOut, lamp, .59, seal, .366, .831, .731, .745, .897, .901);
-    lampPanel(body, frontOut, lamp, .59, rgb(160, 174, 174), .377, .817, .746, .754, .882, .886, .001);
-    lampPanel(body, frontOut, lamp, .59, rgb(218, 227, 220), .382, .727, .765, .769, .865, .871, .002);
-    lampPanel(body, frontOut, lamp, .59, rgb(179, 168, 139), .731, .818, .758, .759, .876, .877, .003);
-    for (let i = 0; i < 20; i++) {
-      const x = .391 + i * .016;
-      trace(body, [lamp(x, .767, .004), lamp(x, .867, .004)], .0028, frontOut, rgb(173, 186, 185));
+    lampPanel(brightwork, frontOut, lamp, .59, rgb(117, 127, 130), .377, .729, .747, .756, .881, .885, .003);
+    lampPanel(headLights, frontOut, lamp, .59, rgb(198, 204, 193), .388, .718, .761, .768, .867, .874, .007);
+    lensEllipse(headLights, lamp, frontOut, .459, .818, .053, .043, .009, rgb(159, 165, 155));
+    lensEllipse(headLights, lamp, frontOut, .459, .818, .034, .027, .012, rgb(207, 210, 190));
+    lensEllipse(headLights, lamp, frontOut, .620, .817, .071, .042, .009, rgb(163, 170, 160));
+    lensEllipse(headLights, lamp, frontOut, .620, .817, .053, .031, .011, rgb(218, 216, 194));
+    for (let i = 0; i < 17; i++) {
+      const x = .396 + i * .0195;
+      trace(headLights, [lamp(x, .768, .015), lamp(x, .866, .015)], .0021, frontOut, rgb(183, 189, 181));
     }
+    lampPanel(indicator, frontOut, lamp, .59, amberGlass, .737, .825, .755, .759, .875, .882, .011);
+    for (const x of [.754, .773, .793, .811]) {
+      trace(indicator, [lamp(x, .764, .013), lamp(x, .873, .013)], .0021, frontOut, amberRib);
+    }
+    face(indicator, [side, 0, 1], amberGlass, lamp(.823, .759, .011), hd(.852, .774, 2.226),
+      hd(.852, .862, 2.226), lamp(.823, .874, .011));
     face(body, [0, 0, 1], seal, hd(.337, .475, 2.416), hd(.686, .475, 2.397), hd(.677, .543, 2.402), hd(.337, .543, 2.416));
-    face(body, [0, 0, 1], rgb(179, 184, 168), hd(.545, .488, 2.414), hd(.659, .488, 2.406), hd(.656, .530, 2.407), hd(.545, .530, 2.414));
+    face(headLights, [0, 0, 1], rgb(171, 177, 159), hd(.545, .488, 2.419), hd(.659, .488, 2.411), hd(.656, .530, 2.412), hd(.545, .530, 2.419));
+    for (const x of [.376, .406, .436, .466, .496]) {
+      trace(body, [hd(x, .484, 2.421), hd(x, .534, 2.421)], .008, frontOut, rgb(56, 60, 62));
+    }
+
+    const wing = (z, y, bulge) => {
+      const p = bodyPoint(side, z, y);
+      p[0] += side * bulge;
+      return p;
+    };
+    face(body, [side, 0, 0], seal, wing(1.890, .812, .002), wing(1.815, .812, .002), wing(1.804, .843, .002), wing(1.877, .846, .002));
+    face(indicator, [side, 0, 0], amberGlass, wing(1.886, .818, .005), wing(1.819, .818, .005),
+      wing(1.813, .837, .005), wing(1.876, .841, .005));
 
     const tailOut = [side * .32, 0, -1];
     const tail = (x, y, depth = 0) => [side * x, y, -(2.395 - Math.max(0, x - .658) * .325 + depth)];
     lampPanel(body, tailOut, tail, .658, seal, .470, .835, .730, .723, .970, .971);
-    lampPanel(tailLights, tailOut, tail, .658, rgb(131, 38, 44), .480, .828, .797, .791, .838, .840, .007);
-    lampPanel(brakeLights, tailOut, tail, .658, rgb(160, 41, 46), .480, .830, .844, .843, .955, .956, .010);
+    lampPanel(tailLights, tailOut, tail, .658, rgb(115, 31, 38), .480, .828, .797, .791, .838, .840, .007);
+    lampPanel(brakeLights, tailOut, tail, .658, rgb(149, 40, 44), .480, .830, .844, .843, .955, .956, .010);
     for (let i = 0; i < 4; i++) {
       const y = .850 + i * .024;
       trace(brakeLights, [tail(.486, y, .012), tail(.658, y, .012), tail(.827, y, .012)], .004, tailOut, rgb(111, 24, 33));
     }
     lampPanel(reverseLights, tailOut, tail, .658, rgb(127, 132, 129), .480, .670, .739, .738, .790, .794, .008);
-    lampPanel(body, tailOut, tail, .658, rgb(151, 97, 49), .674, .827, .736, .734, .786, .791, .008);
+    lampPanel(indicator, tailOut, tail, .658, amberGlass, .674, .827, .736, .734, .786, .791, .012);
+    trace(indicator, [tail(.677, .761, .014), tail(.826, .758, .014)], .003, tailOut, amberRib);
     // Short continuation of the rear light into the quarter panel.
     face(tailLights, tailOut, rgb(115, 30, 37), tail(.826, .792, .010), [side * .865, .796, -2.252], [side * .863, .935, -2.253], tail(.826, .958, .010));
   }
@@ -404,26 +522,40 @@ function buildWheel(wheel) {
   const angle = i => i * tau / segments;
   const p = (x, r, a) => [x, Math.sin(a) * r, Math.cos(a) * r];
   const tread = [[-.1045, .233], [-.1045, .272], [-.101, .293], [-.086, .307], [-.054, .315], [.054, .315], [.086, .307], [.101, .293], [.1045, .272], [.1045, .233]];
+  const tireNormal = (i, angle) => {
+    const [x0, r0] = tread[Math.max(0, i - 1)], [x1, r1] = tread[Math.min(tread.length - 1, i + 1)];
+    const across = x1 - x0, radial = r0 - r1;
+    const length = Math.hypot(across, radial);
+    return [radial / length, Math.sin(angle) * across / length, Math.cos(angle) * across / length];
+  };
   for (let i = 0; i < segments; i++) {
     const a = angle(i), b = angle(i + 1), middle = angle(i + .5);
     for (let j = 1; j < tread.length; j++) {
       const [x0, r0] = tread[j - 1], [x1, r1] = tread[j];
       const normal = [(r0 - r1) * 12, Math.sin(middle), Math.cos(middle)];
-      face(wheel, normal, j >= 4 && j <= 6 ? rgb(30, 31, 32) : rubber, p(x0, r0, a), p(x1, r1, a), p(x1, r1, b), p(x0, r0, b));
+      const normalAt = ([x, y, z]) => {
+        const firstRing = x !== x1 || (x === x0 && Math.abs(Math.hypot(y, z) - r0) < .001);
+        return tireNormal(firstRing ? j - 1 : j, Math.atan2(y, z));
+      };
+      panel(wheel, normal, j >= 4 && j <= 6 ? rgb(30, 31, 32) : rubber,
+        [p(x0, r0, a), p(x1, r1, a), p(x1, r1, b), p(x0, r0, b)], normalAt);
     }
     for (const side of sides) {
       face(wheel, [0, Math.sin(middle), Math.cos(middle)], seal, p(side * .059, .3155, a), p(side * .079, .310, a + .041), p(side * .079, .310, a + .061), p(side * .059, .3155, a + .021));
       const ring = (x, r, a) => p(side * x, r, a);
-      const disk = (x, r, color) => face(wheel, [side, 0, 0], color, [side * x, 0, 0], ring(x, r, a), ring(x, r, b));
-      const strip = (x0, r0, x1, r1, color) => face(wheel, [side, 0, 0], color, ring(x0, r0, a), ring(x1, r1, a), ring(x1, r1, b), ring(x0, r0, b));
-      strip(.103, .233, .108, .224, rgb(108, 119, 125));
-      strip(.108, .224, .109, .213, chrome);
-      strip(.109, .213, .095, .204, nickel);
+      const disk = (x, r, color, material) => panel(wheel, [side, 0, 0], color, [[side * x, 0, 0], ring(x, r, a), ring(x, r, b)], null, material);
+      const strip = (x0, r0, x1, r1, color, material) => panel(wheel, [side, 0, 0], color,
+        [ring(x0, r0, a), ring(x1, r1, a), ring(x1, r1, b), ring(x0, r0, b)], null, material);
+      strip(.1047, .261, .105, .257, rgb(30, 32, 34));
+      strip(.1047, .250, .105, .246, rgb(13, 15, 17));
+      strip(.103, .233, .108, .224, rgb(108, 119, 125), 'metal');
+      strip(.108, .224, .109, .213, chrome, 'metal');
+      strip(.109, .213, .095, .204, nickel, 'metal');
       disk(.090, .209, rgb(48, 55, 58));
       disk(.096, .155, rgb(66, 69, 70));
-      strip(.106, .072, .112, .056, rgb(145, 157, 161));
-      disk(.113, .057, chrome);
-      disk(.115, .029, nickel);
+      strip(.106, .072, .112, .056, rgb(145, 157, 161), 'metal');
+      disk(.113, .057, chrome, 'metal');
+      disk(.115, .024, rgb(82, 92, 99), 'metal');
     }
   }
   for (const side of sides) {
@@ -431,15 +563,21 @@ function buildWheel(wheel) {
     for (let spoke = 0; spoke < 6; spoke++) {
       const a = spoke * tau / 6;
       const q = (x, radius, offset) => p(side * x, radius, a + offset);
-      face(wheel, out, rgb(173, 186, 190), q(.112, .063, -.27), q(.106, .213, -.105), q(.107, .213, .060), q(.111, .063, .26));
-      face(wheel, out, rgb(114, 129, 139), q(.111, .063, .26), q(.107, .213, .060), q(.097, .212, .138), q(.100, .065, .48));
+      panel(wheel, out, rgb(161, 172, 178), [q(.113, .064, -.36), q(.109, .208, -.132), q(.110, .209, .096), q(.112, .064, .32)], null, 'metal');
+      panel(wheel, out, rgb(112, 122, 129), [q(.112, .064, .32), q(.110, .209, .096), q(.098, .210, .166), q(.100, .065, .49)], null, 'metal');
+      panel(wheel, out, rgb(119, 130, 137), [q(.113, .064, -.36), q(.109, .208, -.132), q(.098, .210, -.194), q(.100, .065, -.49)], null, 'metal');
+      const lug = (angle, radius, x) => [side * x, Math.sin(a) * .039 + Math.sin(angle) * radius, Math.cos(a) * .039 + Math.cos(angle) * radius];
+      for (let faceIndex = 0; faceIndex < 6; faceIndex++) {
+        face(wheel, out, rgb(62, 69, 74), lug(0, 0, .114), lug(faceIndex * tau / 6, .006, .114), lug((faceIndex + 1) * tau / 6, .006, .114));
+      }
     }
   }
 }
 
-export function buildAvant({ body, paint, glass, wheel, tailLights, brakeLights, reverseLights }) {
+export function buildAvant(parts) {
+  const { body, paint, glass, brightwork, wheel } = parts;
   buildShell(body, paint);
-  buildCabin(body, paint, glass);
-  buildLighting(body, tailLights, brakeLights, reverseLights);
+  buildCabin(body, paint, glass, brightwork);
+  buildLighting(parts);
   buildWheel(wheel);
 }
