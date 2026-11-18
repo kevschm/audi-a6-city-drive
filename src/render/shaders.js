@@ -73,6 +73,8 @@ attribute float aMaterial;
 uniform mat4 uVP;
 uniform mat4 uModel;
 uniform mat4 uLight;
+uniform vec3 uEye;
+varying vec3 vEyeDelta;
 varying vec3 vColor;
 varying vec3 vNormal;
 varying vec3 vWorld;
@@ -82,6 +84,7 @@ varying float vMaterial;
 void main() {
   vec4 world = uModel * vec4(aPos, 1.0);
   vWorld = world.xyz;
+  vEyeDelta = uEye - world.xyz;
   vLocal = aPos;
   vNormal = mat3(uModel) * aNormal;
   vColor = aColor;
@@ -93,7 +96,6 @@ void main() {
 
 export const meshFragment = `
 precision highp float;
-uniform vec3 uEye;
 uniform vec3 uTint;
 uniform vec3 uContact;
 uniform float uStyle;
@@ -104,6 +106,7 @@ uniform float uDetail;
 uniform float uHeadLamp;
 uniform vec2 uHeadAxis;
 uniform sampler2D uDepth;
+varying vec3 vEyeDelta;
 varying vec3 vColor;
 varying vec3 vNormal;
 varying vec3 vWorld;
@@ -192,7 +195,7 @@ void main() {
     return;
   }
   vec3 n = normalize(vNormal);
-  vec3 delta = uEye - vWorld;
+  vec3 delta = vEyeDelta;
   float d = length(delta);
   vec3 toEye = delta / max(d, 0.01);
   bool water = vMaterial > 7.5 && vMaterial < 8.5;

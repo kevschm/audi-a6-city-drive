@@ -1,0 +1,45 @@
+name: Verify live Cloudflare version
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - src/render/**
+      - src/main.js
+      - .github/workflows/production-verify.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose deployed HTML and Android WebGL shader
+        env:
+          SITE: https://audi-a6-city-drive.schmidtkevinprivat.workers.dev
+        run: |
+          set -euo pipefail
+          http_html=$(curl -sSL --max-time 20 -w '%{http_code}' -H 'Cache-Control: no-cache' "$SITE/?diagnostic=webgl-android-20261118c" -o /tmp/a6-index.html)
+          http_shader=$(curl -sSL --max-time 20 -w '%{http_code}' -H 'Cache-Control: no-cache' "$SITE/src/render/shaders.js?diagnostic=webgl-android-20261118c" -o /tmp/a6-shaders.js)
+          echo "HTML HTTP: $http_html, bytes: $(wc -c </tmp/a6-index.html)"
+          echo "Shader HTTP: $http_shader, bytes: $(wc -c </tmp/a6-shaders.js)"
+          echo 'Public HTML build marker:'
+          grep -oE 'WEBGL-ANDROID-[0-9A-Z]+' /tmp/a6-index.html || true
+          echo 'Public HTML import:'
+          grep -oE 'src/main.js[^"]*' /tmp/a6-index.html || true
+          echo 'Public shader camera declarations:'
+          grep -n 'uEye\|vEyeDelta' /tmp/a6-shaders.js || true
+          echo 'Public HTML first line:'
+          head -c 140 /tmp/a6-index.html || true
+          echo
+          if [[ "$http_html" == "200" && "$http_shader" == "200" ]] \
+            && grep -Fq 'WEBGL-ANDROID-20261118B' /tmp/a6-index.html \
+            && grep -Fq 'vEyeDelta = uEye - world.xyz;' /tmp/a6-shaders.js \
+            && grep -Fq 'vec3 delta = vEyeDelta;' /tmp/a6-shaders.js; then
+            echo 'PASS: Cloudflare serves current corrected Android WebGL build'
+          else
+            echo 'FAIL: Cloudflare is serving old/incomplete content or is inaccessible from runner'
+            exit 1
+          fi

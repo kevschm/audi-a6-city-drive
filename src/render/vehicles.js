@@ -1,7 +1,7 @@
 import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
-import { MATERIAL } from './renderer.js';
+import { MATERIAL } from './renderer.js?webgl-android-fix-20261118-050';
 import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
 
 const volume = (x, y, z, radius, height) =>

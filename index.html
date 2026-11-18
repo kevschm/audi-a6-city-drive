@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#151b1b">
   <meta name="game-version" content="0.5.0">
   <title>Audi A6 City Drive</title>
+  <meta name="game-build" content="WEBGL-ANDROID-20261118B">
   <link rel="stylesheet" href="./src/styles.css">
 </head>
 <body>
@@ -91,6 +92,7 @@
       <section class="sheet" role="alert">
         <h2>Grafik nicht verfügbar</h2>
         <p id="errText">Das Spiel konnte nicht vollständig geladen werden. Lade die Seite neu.</p>
+        <small id="buildInfo">Version WEBGL-ANDROID-20261118B</small>
         <a class="primary" href="./">Neu laden</a>
       </section>
     </div>
@@ -102,6 +104,6 @@
       document.getElementById('errorModal').classList.remove('hidden');
     }, true);
   </script>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js?webgl-android-fix-20261118-050"></script>
 </body>
 </html>
