@@ -1,64 +1,16 @@
-# Audi A6 C4 Avant – technische Roadmap
+# Entwicklungsstand und offene Arbeiten
 
-Stand: 17. November 2026. Qualitätsziel: spielbare, glaubwürdige Fahrzeug- und Stadtsimulation, zunächst als mobilefähige Browser-Anwendung.
+## Version 0.4
 
-## Bestandsaufnahme des Ausgangsstands (v2.0)
+Die Spielversion hat einen modularen WebGL-Renderer mit prozeduralen Straßen- und Fassadenoberflächen, Himmelsreflexionen, Blickfeldprüfung für 25 Stadtsektoren und einer lokalen Schattenkarte. Das eigene Avant-Modell zeigt Dachreling, Leuchten, spiegelnde Scheiben, drehende Räder und sichtbaren Lenkeinschlag.
 
-| Bereich | Ist-Zustand | Hauptdefizit |
-| --- | --- | --- |
-| Architektur | Ein HTML-Dokument (~45 KB) enthält CSS, Rendering, Geometrie, Physik, UI und Stadt | Schwer wartbar und testbar |
-| Grafik | Eigener einfacher WebGL-1-Renderer, Vertexfarben, mathematisch erzeugte Gebäude, rudimentäre Lichtberechnung | Keine PBR-Materialien, Texturen, echten dynamischen Schatten oder Detail-Assets |
-| Audi | Programmatisch generiertes, kantiges Modell mit einzelnen Merkmalen des C4 Avant | Proportionen nur angenähert, kein professionelles Mesh und kein Innenraum |
-| Fahrzeugphysik | Handgeschriebenes Reifen-/Lenk-Modell, Kollisionsprüfung gegen AABB-Punkte | Keine Physik-Engine, kein Fahrwerk, vereinfachte Reifenkräfte, bisher variable Substeps |
-| Stadt | Starres Straßengitter, einige Viertel und einfache Verkehrsfahrzeuge | Repetitive Straßenführung, keine Streaming-Sektoren, vereinfachte KI |
-| Performance | Geometriepuffer werden einmalig hochgeladen, Mobil-Eco-Modus | Kein Profiling, kein Frustum-Culling/LOD; FPS-Ziele nicht gemessen |
-| Deployment | Statische Dateien, privates GitHub-Repo | Keine verifizierte Website; Cloudflare-Pages-Verbindung ausstehend |
-| Tests | Ursprünglich keine Testsuite | Gameplay-Regressionsrisiko |
+Die Stadt besitzt unterschiedlich breite Straßenzüge, markierte Kreuzungen, Radstreifen, einen Bahnhof, einen Marktplatz, Parks, 30 parkende Fahrzeuge und 14 fahrende KI-Autos. Kreuzungen nutzen eine Vorrangreservierung. Ampelphasen und die Lage der Haltelinien bestimmen, wann die KI weiterfährt.
 
-## Priorisierte Phasen und Abnahmekriterien
+Die Fahrphysik läuft mit 60 Hz und modelliert Radschlupf, Untersteuern, Lasttransfer, Automatikschaltungen, Handbremse und Rückwärtsfahrt. Die Tests prüfen unter anderem Bremsweg, Zeitschrittstabilität, Hindernisse und eine fünfminütige KI-Fahrt. Der Browser-Smoke-Test startet den Produktionsbuild und deckt Tastatur, Kamera, Pause, Neustart und Mehrfingertouch ab.
 
-### P0 – Wartbarkeit und verlässlicher Start (begonnen)
-- [x] HTML, Styles und JavaScript in getrennte Dateien aufteilen.
-- [x] Fester 60-Hz-Physiktakt, begrenztes Aufholen, Unterbrechungen ohne Zeitsprung.
-- [x] Node-basierte Tests für Simulationsuhr sowie Syntaxprüfung hinzufügen.
-- [ ] Starten und Fahren auf Samsung Internet, Chrome/Android und Windows/Chrome **auf echten Geräten prüfen**.
-- [x] Produktions-Build für Cloudflare Pages vorbereitet (`npm run build`, Ausgabe `dist/`).
-- [ ] Cloudflare Pages an das private GitHub-Repo anbinden; produktive URL prüfen.
-- [x] GitHub Actions führt Syntaxprüfung und Simulationsuhr-Unit-Tests bei Push/PR aus.
-- [ ] Später: Vite-Entwicklungsserver für weitere Module und Assets ergänzen.
+## Nächste Ausbauschritte
 
-**Abnahme P0:** Spiel startet ohne Fehlermeldung über HTTPS; Gas, Bremse, Lenkung, Pause und Reset funktionieren; Testskript läuft fehlerfrei.
-
-### P1 – Fahrphysik und belastbares Fahrzeugmodell
-- [ ] Physik-Engine (z. B. Rapier) anhand Web-Bundle, Performance und Vehicle-Modell evaluieren.
-- [ ] Fahrzeugparameter (Gewicht, Radstand, Spur, Schwerpunkt, Antrieb, Reifen) in eigenem Datenmodell.
-- [ ] Federung, Schlupfwinkel, Untersteuern, Handbremse und Kollisionskörper implementieren.
-- [ ] Referenzfahrten (0–100, Bremsweg, Kurvenradius) und Regressionstests.
-- [ ] Detailgenaueres, rechtmäßig nutzbares A6-C4-Avant-Modell (glTF) inklusive LOD und Lichtfunktionen integrieren.
-
-**Abnahme P1:** Reproduzierbarer Fahreindruck bei 30/60 FPS, plausibles Verhalten; deutlich besseres Fahrzeugmodell ohne gravierenden Performanceverlust.
-
-### P2 – Visual-Vertical-Slice Stadtviertel
-- [ ] Modernisierung Renderpfad (Three.js / WebGL2-Option) begründet entscheiden.
-- [ ] Ein hochwertiges Stadtviertel mit gekrümmter Hauptstraße, Nebenstraße, Parkfläche und glaubwürdigen Kreuzungen.
-- [ ] PBR-Texturen, Schattenbudget, Lichtstimmung, Asphalt/Markierungen und passende Architektur-Assets.
-- [ ] Sichtweitenmanagement/LOD, Frustum-Culling, Mesh-Instancing, Profiling.
-
-**Abnahme P2:** Ein kurzes Stadtviertel wirkt sichtbar überzeugender; mobile Performance mit Messdaten dokumentiert.
-
-### P3 – Lebendige Stadt
-- [ ] Einfache Verkehrs-KI mit Spurführung, Kreuzungen und Ampeln.
-- [ ] Parkende Autos, Verkehrszeichen und Sound; Fußgänger erst bei stabiler Performance.
-- [ ] Mobile Grafikstufen und Kameraqualität verbessern.
-
-### P4 – Welt, Wetter und langfristige Qualität
-- [ ] Weitere Stadtteile mit Streaming-System, Tag/Nacht, Wetter und optional Cockpit ergänzen.
-- [ ] Auf realen Geräten regelmäßig Frametimes, RAM- und GPU-Budget messen.
-
-## Technische Leitplanken
-
-1. Keine Behauptung von GTA-IV-Grafikqualität ohne entsprechende Assets und Messungen.
-2. Kleine, hochwertig gebaute Umgebung vor großer, generischer Stadt.
-3. Bestehende Spielfunktionen bei Refactoring erhalten und durch Tests absichern.
-4. Repository bleibt privat; öffentliches Hosting der Web-App ist eine **getrennte** Entscheidung.
-5. Jede Verbesserung mit Git-Commit, überprüfbarem Teststatus und offenen Risiken dokumentieren.
+- Auf einem Galaxy S24+ über längere Fahrten Frametimes und Thermik messen und Grafikstufen damit einstellen.
+- Ein detailliertes Interieur für eine echte Cockpitperspektive und zusätzliche Referenzen für Licht, Material und Fahrgefühl ergänzen.
+- Kanten und Übergänge in der Stadt mit weiteren Gebäudetypen, niveauabhängigem Fahrwerk, Texturdetails und Geländeprofil ausbauen.
+- Three.js und glTF an einem unabhängigen Prototyp für PBR-Assets und das Beleuchtungsbudget messen. Rapier anhand unabhängiger Radkontakte und dynamischer Hindernisse erneut bewerten.

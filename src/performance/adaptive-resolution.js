@@ -7,12 +7,13 @@ export function createAdaptiveResolution({
   minScale = 0.8,
   maxScale = 1.65,
   targetFps = 40,
+  highFpsFactor = 1.35,
   sampleMs = 1000,
   lowSamples = 2,
   highSamples = 3
 } = {}) {
   if (!(minScale > 0 && maxScale >= minScale &&
-        targetFps > 0 && sampleMs > 0 &&
+        targetFps > 0 && highFpsFactor > 1 && sampleMs > 0 &&
         Number.isInteger(lowSamples) && lowSamples >= 1 &&
         Number.isInteger(highSamples) && highSamples >= 1)) {
     throw new RangeError('Invalid adaptive resolution settings');
@@ -60,7 +61,7 @@ export function createAdaptiveResolution({
           scale = Math.max(minScale, Math.round((scale - 0.15) * 100) / 100);
           lows = 0;
         }
-      } else if (fps > targetFps * 1.35) {
+      } else if (fps > targetFps * highFpsFactor) {
         highs++;
         lows = 0;
         if (highs >= highSamples) {

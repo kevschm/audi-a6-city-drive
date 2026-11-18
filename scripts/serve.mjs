@@ -4,6 +4,7 @@ import { resolve, relative, extname, isAbsolute } from 'node:path';
 
 const ROOT = process.cwd();
 const port = Number.parseInt(process.env.PORT || '8000', 10);
+const host = process.env.HOST || '0.0.0.0';
 const mime = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
@@ -13,7 +14,7 @@ const mime = new Map([
   ['.svg', 'image/svg+xml'],
 ]);
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { 'Allow': 'GET, HEAD' }).end();
@@ -38,6 +39,6 @@ http.createServer(async (req, res) => {
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not Found');
   }
-}).listen(port, '0.0.0.0', () => {
-  console.log(`Audi A6 City Drive running at http://localhost:${port}`);
+}).listen(port, host, () => {
+  console.log(`Audi A6 City Drive running at http://localhost:${server.address().port}`);
 });

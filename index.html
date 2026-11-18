@@ -1,20 +1,87 @@
-<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="theme-color" content="#101a22"><title>Audi A6 C4 Avant · CITY DRIVE 2</title>
-<link rel="stylesheet" href="./src/styles.css"></head><body><div id="game"><canvas id="view"></canvas><canvas id="minimap" width="300" height="300"></canvas>
-<div class="logo layer"><div class="eyebrow">A6 · CITY DRIVE 2.0 <span id="fps" aria-label="Bildrate">-- FPS</span></div><h1>AUDI A6 C4 AVANT</h1><p>Schwarzmetallic · Freie Fahrt</p></div><div class="district" id="place">INNENSTADT · FREIE FAHRT</div><div class="rightbar"><button id="camBtn" type="button">◉ Kamera</button><button id="qualityBtn" type="button">◫ Grafik: Hoch</button><button id="pauseBtn" type="button">Ⅱ Pause</button></div><div class="meters"><div class="spd"><div id="speed" class="digit">0</div><div class="unit">KM/H</div></div><div class="readout"><div class="row"><span>GETRIEBE</span><b id="gear">P</b></div><div class="row"><span>DREHZAHL</span><b id="rpm">900</b></div><div class="bar"><i id="rpmb"></i></div><div class="row"><span>STRECKE</span><b id="dist">0,0 km</b></div></div></div><div class="help">W / ↑ Gas · S / ↓ Bremsen / Rückwärts · A / D Lenken<br>Leertaste Handbremse · V Kamera · R Neustart · P Pause</div><div class="feedback" id="toast"></div>
-<div class="controls"><div class="group"><button class="ctrl" data-key="left" aria-label="Nach links lenken">‹</button><button class="ctrl" data-key="right" aria-label="Nach rechts lenken">›</button><button class="ctrl" data-key="handbrake" aria-label="Handbremse"><span>HANDBR.</span></button></div><div class="group"><button class="ctrl brake" data-key="brake" aria-label="Bremsen"><span>BREMSE</span></button><button class="ctrl accel" data-key="throttle" aria-label="Beschleunigen"><span>GAS</span></button></div></div>
-<div class="modal" id="intro"><div class="sheet"><div class="pill">NEUE VERSION · 3D SIMULATION</div><div class="rings" aria-label="Vier Ringe"><i></i><i></i><i></i><i></i></div><h2>A6 CITY DRIVE</h2><p>Dein schwarzer Audi A6 C4 Avant wartet in einer neu gestalteten Stadt. Entdecke Altstadt, Innenstadt, Stadtpark und Wohnviertel – mit dynamischem Fahrverhalten und Verkehr.</p><button class="primary" type="button" id="startBtn" disabled>Spiel wird geladen ...</button><p class="small">Smartphone: Bildschirmtasten · PC: WASD / Pfeiltasten</p></div></div>
-<div class="modal hidden" id="pauseModal"><div class="sheet"><h2>Fahrt pausiert</h2><p>Du kannst jederzeit weiterfahren oder das Fahrzeug an den Start zurücksetzen.</p><button class="primary" type="button" id="resumeBtn">Weiterfahren</button><p><button class="secondary" id="resetBtn">Am Start neu beginnen</button></p></div></div>
-<div class="modal hidden" id="errorModal"><div class="sheet"><h2>3D-Grafik nicht verfügbar</h2><p id="errText">Der Browser unterstützt WebGL möglicherweise nicht. Öffne die HTML-Datei im Samsung Internet Browser oder in Chrome.</p></div></div></div>
-<script>
-window.addEventListener('error', (event) => {
-  const startButton = document.getElementById('startBtn');
-  if (!startButton || !startButton.disabled) return;
-  const intro = document.getElementById('intro');
-  const errorModal = document.getElementById('errorModal');
-  const errorText = document.getElementById('errText');
-  if (intro) intro.classList.add('hidden');
-  if (errorText) errorText.textContent = 'Das Spiel konnte nicht vollständig geladen werden. Bitte die Seite über HTTPS öffnen und neu laden.';
-  if (errorModal) errorModal.classList.remove('hidden');
-}, true);
-</script>
-<script type="module" src="./src/main.js"></script></body></html>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#151b1b">
+  <title>Audi A6 City Drive</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <main id="game">
+    <canvas id="view" aria-label="3D-Straßenszene"></canvas>
+
+    <header class="brand">
+      <div class="wordmark">CITY DRIVE<span></span></div>
+      <h1>Audi A6 C4 Avant</h1>
+    </header>
+
+    <div class="district panel" id="place">Innenstadt · Asphalt</div>
+    <aside class="tools" aria-label="Fahrtmenü">
+      <canvas id="minimap" width="280" height="280" aria-label="Minikarte"></canvas>
+      <div class="actions">
+        <button id="camBtn" type="button" title="Kamera wechseln (V)"><b aria-hidden="true">◉</b><span>Verfolger</span></button>
+        <button id="qualityBtn" type="button" title="Grafikqualität wechseln" aria-label="Grafikqualität wechseln"><b aria-hidden="true">◫</b><span>Auto</span></button>
+        <button id="audioBtn" type="button" title="Ton einschalten" aria-pressed="false"><b aria-hidden="true">♪</b><span>Ton aus</span></button>
+        <button id="pauseBtn" type="button" title="Spiel pausieren (P)"><b aria-hidden="true">Ⅱ</b><span>Pause</span></button>
+      </div>
+    </aside>
+
+    <section class="cluster panel" aria-label="Instrumente">
+      <div class="speed"><span id="speed">0</span><small>km/h</small></div>
+      <div class="readout">
+        <div class="shift"><span id="gear">N</span><small id="rpm">850</small></div>
+        <div class="rev"><i id="rpmb"></i></div>
+        <div class="telemetry"><small id="dist">0,0 km</small><small id="fps" aria-label="Bildrate">– FPS</small></div>
+      </div>
+    </section>
+
+    <div class="help panel"><span><kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> Fahren</span><span><kbd>Leertaste</kbd> Handbremse</span><span><kbd>V</kbd> Kamera · <kbd>R</kbd> Neustart · <kbd>P</kbd> Pause</span></div>
+    <div id="toast" class="toast panel" role="status"></div>
+
+    <div class="controls" aria-label="Touch-Steuerung">
+      <div class="group steering">
+        <button class="ctrl" type="button" data-key="left" aria-label="Nach links lenken">‹</button>
+        <button class="ctrl" type="button" data-key="right" aria-label="Nach rechts lenken">›</button>
+      </div>
+      <div class="group pedals">
+        <button class="ctrl handbrake" type="button" data-key="handbrake" aria-label="Handbremse"><span>Handbr.</span></button>
+        <button class="ctrl brake" type="button" data-key="brake" aria-label="Bremsen oder rückwärtsfahren"><span>Bremse</span></button>
+        <button class="ctrl accel" type="button" data-key="throttle" aria-label="Beschleunigen"><span>Gas</span></button>
+      </div>
+    </div>
+
+    <div class="modal" id="intro">
+      <section class="sheet" aria-labelledby="introTitle">
+        <div class="wordmark">CITY DRIVE<span></span></div>
+        <h2 id="introTitle">Audi A6<br>C4 Avant</h2>
+        <button class="primary" type="button" id="startBtn" disabled>Spiel lädt …</button>
+        <p class="intro-desktop">Fahren mit WASD oder den Pfeiltasten.</p>
+        <p class="intro-touch">Drehe dein Gerät für mehr Sicht auf die Straße.</p>
+      </section>
+    </div>
+    <div class="modal hidden" id="pauseModal">
+      <section class="sheet" aria-labelledby="pauseTitle">
+        <h2 id="pauseTitle">Fahrt pausiert</h2>
+        <button class="primary" type="button" id="resumeBtn">Weiterfahren</button>
+        <button class="secondary" type="button" id="resetBtn">Am Start neu beginnen</button>
+      </section>
+    </div>
+    <div class="modal hidden" id="errorModal">
+      <section class="sheet" role="alert">
+        <h2>Grafik nicht verfügbar</h2>
+        <p id="errText">Das Spiel konnte nicht vollständig geladen werden. Lade die Seite neu.</p>
+        <a class="primary" href="./">Neu laden</a>
+      </section>
+    </div>
+  </main>
+  <script>
+    window.addEventListener('error', () => {
+      if (!document.getElementById('startBtn').disabled) return;
+      document.getElementById('intro').classList.add('hidden');
+      document.getElementById('errorModal').classList.remove('hidden');
+    }, true);
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
