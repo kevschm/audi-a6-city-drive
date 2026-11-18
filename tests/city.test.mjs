@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Mesh } from '../src/render/mesh.js';
-import { buildCity, districtAt, halfWorld, roadHalfWidth, roads, roadSurfaceAt } from '../src/world/city.js';
+import { buildCity, districtAt, groundHeightAt, halfWorld, roadHalfWidth, roads, roadSurfaceAt } from '../src/world/city.js';
 
 const city = buildCity({ Mesh });
 
@@ -71,4 +71,19 @@ test('signal housings mark every approach and parked vehicles occupy roadside ba
     assert.equal(roadSurfaceAt(x, z), 'asphalt');
     assert.ok(roads.every(center => Math.abs(x - center) > roadHalfWidth(center)));
   }
+});
+
+test('wheel contact height rises at pavement curbs and parking-bay edges', () => {
+  const curb = roadHalfWidth(0);
+  assert.equal(groundHeightAt(curb - .02, 22), 0);
+  const bevel = groundHeightAt(curb + .08, 22);
+  assert.ok(bevel > .131 && bevel < .16);
+  assert.equal(groundHeightAt(curb + .24, 22), .16);
+
+  const bayEdge = 70 - roadHalfWidth(70) - 2.7;
+  assert.equal(groundHeightAt(bayEdge + .08, -104), 0);
+  assert.ok(groundHeightAt(bayEdge - .08, -104) < .16);
+  assert.equal(groundHeightAt(bayEdge - .24, -104), .16);
+  assert.equal(groundHeightAt(-50, -50), .17);
+  assert.equal(groundHeightAt(241, 241), -.032);
 });

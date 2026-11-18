@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AVANT_WHEELS, buildAvant } from '../src/render/avant.js';
+import { Mesh } from '../src/render/mesh.js';
+
+const parts = ['body', 'paint', 'glass', 'brightwork', 'wheel', 'headLights', 'tailLights', 'brakeLights', 'reverseLights', 'leftSignals', 'rightSignals'];
 
 function collectAvant() {
   const batches = {};
   const meshes = {};
-  for (const part of ['body', 'paint', 'glass', 'wheel', 'tailLights', 'brakeLights', 'reverseLights']) {
+  for (const part of parts) {
     const triangles = batches[part] = [];
     const mesh = meshes[part] = {
       tri: (a, b, c, color) => triangles.push({ points: [a, b, c], color, part }),
@@ -68,6 +71,7 @@ test('headlamps and separately animated rear lenses sit in front of the shell', 
   const silhouette = Object.values(batches).flat();
   for (const side of [-1, 1]) {
     const headlamp = visibleInEndView(silhouette, side * .54, .81, 1);
+    assert.equal(headlamp.part, 'headLights');
     assert.ok(Math.min(...headlamp.color) > .60);
     assert.equal(visibleInEndView(silhouette, side * .57, .818, -1).part, 'tailLights');
     assert.equal(visibleInEndView(silhouette, side * .57, .902, -1).part, 'brakeLights');
@@ -75,6 +79,33 @@ test('headlamps and separately animated rear lenses sit in front of the shell', 
     assert.equal(visibleInEndView(silhouette, side * .57, .774, -1).part, 'reverseLights');
   }
   assert.equal(visibleInEndView(silhouette, .05, 1.312, -1).part, 'brakeLights');
+});
+
+test('both direction indicators are visible from both ends and independent by side', () => {
+  const { wheel, ...batches } = collectAvant();
+  const silhouette = Object.values(batches).flat();
+  for (const [side, part] of [[-1, 'leftSignals'], [1, 'rightSignals']]) {
+    assert.equal(visibleInEndView(silhouette, side * .784, .818, 1).part, part);
+    assert.equal(visibleInEndView(silhouette, side * .75, .773, -1).part, part);
+    const points = batches[part].flatMap(triangle => triangle.points);
+    assert.ok(points.every(([x]) => side * x > .65));
+    assert.ok(points.some(([, , z]) => z > 1.80 && z < 1.90), `${part} missing wing repeater`);
+  }
+});
+
+test('the packed body surface and alloy wheels retain unit corner normals', () => {
+  const meshes = Object.fromEntries(parts.map(part => [part, new Mesh()]));
+  buildAvant(meshes);
+  for (const mesh of [meshes.paint, meshes.wheel]) {
+    let smoothFaces = 0;
+    for (let face = 0; face < mesh.vertices.length; face += 30) {
+      const normals = [6, 16, 26].map(offset => mesh.vertices.slice(face + offset, face + offset + 3));
+      for (const normal of normals) assert.ok(Math.abs(Math.hypot(...normal) - 1) < 1e-8);
+      if (normals[0].some((value, axis) => value !== normals[1][axis])) smoothFaces++;
+    }
+    assert.ok(smoothFaces > 150);
+  }
+  assert.ok(meshes.wheel.vertices.some((value, index) => index % 10 === 9 && value === 9));
 });
 
 test('the blue plate marker faces the left of the game camera at both ends', () => {

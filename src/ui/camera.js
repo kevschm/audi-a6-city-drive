@@ -1,6 +1,6 @@
-import { lerp, mixAngle } from '../render/math.js';
+import { clamp, lerp, mixAngle } from '../render/math.js';
 
-export const cameraNames = ['Verfolger', 'Schrägansicht', 'Motorhaube'];
+export const cameraNames = ['Verfolger', 'Schrägansicht', 'Motorhaube', 'Frontansicht'];
 
 function cameraClearance(x, z, dx, dz, obstacles) {
   let nearest = 1;
@@ -18,24 +18,29 @@ function cameraClearance(x, z, dx, dz, obstacles) {
 }
 
 export function createCamera() {
-  let heading, clearance;
+  let heading, clearance, speed, height, fieldOfView;
 
   function update(car, mode, dt, obstacles) {
-    const speed = Math.abs(car.speed);
-    heading = heading === undefined ? car.heading : mixAngle(heading, car.heading, 1 - Math.exp(-dt * (mode === 2 ? 18 : 7)));
+    const hood = mode === 2;
+    speed = speed === undefined ? Math.abs(car.speed) : lerp(speed, Math.abs(car.speed), 1 - Math.exp(-dt * 3.8));
+    heading = heading === undefined || hood ? car.heading : mixAngle(heading, car.heading, 1 - Math.exp(-dt * (5 + speed * 0.09)));
     const s = Math.sin(heading), c = Math.cos(heading);
-    const back = mode === 0 ? 7.2 + Math.min(speed * 0.074, 2.5) : mode === 1 ? 6.4 : -1.85;
-    const side = mode === 0 ? -1.1 : mode === 1 ? -6.2 : 0;
+    const back = [7.05 + Math.min(speed * 0.062, 2.5), 5.65, -1.18, -5.45][mode];
+    const side = [-0.83, -6.4, 0, -4.25][mode];
     const dx = c * side - s * back, dz = -s * side - c * back;
-    const maxDistance = mode === 2 ? 1 : cameraClearance(car.x, car.z, dx, dz, obstacles);
+    const maxDistance = hood ? 1 : cameraClearance(car.x, car.z, dx, dz, obstacles);
     clearance = clearance === undefined ? maxDistance : Math.min(maxDistance, lerp(clearance, maxDistance, 1 - Math.exp(-dt * 4)));
-    const high = mode === 0 ? 2.95 : mode === 1 ? 5.6 : 1.43;
-    const eye = [car.x + dx * clearance, high + (mode === 2 ? car.heave - car.pitch * 1.85 : 0), car.z + dz * clearance];
-    const ahead = mode === 0 ? 4.1 : mode === 1 ? 2.1 : 27;
-    const target = [car.x + s * ahead, mode === 2 ? 1.64 - car.pitch * 6 : 1.03, car.z + c * ahead];
-    const fov = (mode === 0 ? 53 + Math.min(speed * 0.22, 8) : mode === 1 ? 56 : 61) * Math.PI / 180;
-    return { eye, target, fov };
+    const base = [2.72 + Math.min(speed * 0.011, 0.42), 4.45, 1.37, 2.4][mode];
+    const elevation = base + (hood ? car.heave - car.pitch * 1.18 : 0.68 * car.heave);
+    height = height === undefined || hood ? elevation : lerp(height, elevation, 1 - Math.exp(-dt * 4.4));
+    const eye = [car.x + dx * clearance, height + (hood ? 0 : (1 - clearance) * 0.5), car.z + dz * clearance];
+    const ahead = [3.20 + speed * 0.06, 1.0, 27, 0.15][mode];
+    const turn = mode === 0 ? clamp(car.yaw || 0, -0.7, 0.7) * Math.min(speed * 0.027, 0.66) : 0;
+    const target = [car.x + s * ahead + c * turn, (hood ? 1.54 - car.pitch * 3.8 : mode === 0 ? 0.69 : 0.94) + car.heave, car.z + c * ahead - s * turn];
+    const fov = ([51 + Math.min(speed * 0.21, 7), 52, 64, 55][mode]) * Math.PI / 180;
+    fieldOfView = fieldOfView === undefined ? fov : lerp(fieldOfView, fov, 1 - Math.exp(-dt * 3.2));
+    return { eye, target, fov: fieldOfView };
   }
 
-  return { update, reset() { heading = clearance = undefined; } };
+  return { update, reset() { heading = clearance = speed = height = fieldOfView = undefined; } };
 }

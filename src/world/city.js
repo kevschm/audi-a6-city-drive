@@ -3,6 +3,8 @@ import { color } from '../render/mesh.js';
 const BLOCK_SIZE = 70;
 const EDGE = 242;
 const CURB = .16;
+const CURB_EDGE = .131;
+const CURB_BEVEL = .16;
 const BAY_LENGTH = 28;
 const BAY_DEPTH = 2.7;
 
@@ -35,6 +37,14 @@ function blockAt(x, z) {
   return ix >= 0 && ix < 6 && iz >= 0 && iz < 6 ? { ix, iz } : null;
 }
 
+function blockBounds(ix, iz) {
+  return {
+    x0: roads[ix] + widths[ix], x1: roads[ix + 1] - widths[ix + 1],
+    z0: roads[iz] + widths[iz], z1: roads[iz + 1] - widths[iz + 1],
+    centerZ: roads[iz] + BLOCK_SIZE / 2,
+  };
+}
+
 function baySide(ix, iz) {
   return (ix + iz) % 3 === 0 ? 0 : iz % 2 === 0 ? -1 : 1;
 }
@@ -51,11 +61,11 @@ export function roadSurfaceAt(x, z) {
   const block = blockAt(x, z);
   if (!block) return 'grass';
   const { ix, iz } = block;
-  const centerZ = roads[iz] + BLOCK_SIZE / 2;
+  const { x0, x1, centerZ } = blockBounds(ix, iz);
   if (Math.abs(z - centerZ) < BAY_LENGTH / 2) {
     const side = baySide(ix, iz);
-    if (side < 0 && x < roads[ix] + widths[ix] + BAY_DEPTH) return 'asphalt';
-    if (side > 0 && x > roads[ix + 1] - widths[ix + 1] - BAY_DEPTH) return 'asphalt';
+    if (side < 0 && x < x0 + BAY_DEPTH) return 'asphalt';
+    if (side > 0 && x > x1 - BAY_DEPTH) return 'asphalt';
   }
   if (blockKind(ix, iz) === 'park'
       && x > roads[ix] + 13 && x < roads[ix + 1] - 13
@@ -63,6 +73,24 @@ export function roadSurfaceAt(x, z) {
       && Math.abs(x - roads[ix] - BLOCK_SIZE / 2) > 2.4
       && Math.abs(z - centerZ) > 2.4) return 'grass';
   return 'paving';
+}
+
+export function groundHeightAt(x, z) {
+  const surface = roadSurfaceAt(x, z);
+  if (surface === 'asphalt') return 0;
+  const block = blockAt(x, z);
+  if (!block) return -.032;
+  if (surface === 'grass') return CURB + .01;
+  const { ix, iz } = block;
+  const { x0, x1, z0, z1, centerZ } = blockBounds(ix, iz);
+  const side = baySide(ix, iz);
+  let clearance = Math.min(x - x0, x1 - x, z - z0, z1 - z);
+  if (side) {
+    const across = side < 0 ? x - x0 - BAY_DEPTH : x1 - x - BAY_DEPTH;
+    const along = Math.abs(z - centerZ) - BAY_LENGTH / 2;
+    clearance = Math.min(clearance, Math.hypot(Math.max(0, across), Math.max(0, along)));
+  }
+  return CURB_EDGE + (CURB - CURB_EDGE) * Math.min(1, Math.max(0, clearance / CURB_BEVEL));
 }
 
 function randomFrom(seed) {
@@ -113,6 +141,56 @@ function facadeFace(mesh, x, z, dx, dz) {
   return { panel, ledge, point };
 }
 
+const signLetters = {
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  C: ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+  E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+  F: ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+  H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+  K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  M: ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
+  N: ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+  P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+  T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+  U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  Z: ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+};
+
+function lettering(face, text, center, y, unit, offset, hue) {
+  const width = (text.length * 6 - 1) * unit;
+  const origin = center + width / 2;
+  for (const [index, letter] of [...text].entries()) {
+    const rows = signLetters[letter];
+    if (!rows) continue;
+    for (const [row, cells] of rows.entries()) {
+      const bottom = y + (6 - row) * unit;
+      for (const match of cells.matchAll(/1+/g)) {
+        const right = origin - (index * 6 + match.index) * unit;
+        face.panel(right - match[0].length * unit, bottom, right, bottom + unit, offset, hue);
+      }
+    }
+  }
+}
+
+function stripeAwning(mesh, face, left, right, y, width, primary, accent) {
+  const stripes = Math.max(7, Math.round((right - left) / .32));
+  const band = (right - left) / stripes;
+  for (let stripe = 0; stripe < stripes; stripe++) {
+    const a = left + stripe * band;
+    const b = a + band;
+    const hue = stripe % 2 ? accent : primary;
+    mesh.quad(face.point(a, y, width), face.point(b, y, width),
+      face.point(b, y + .44, .07), face.point(a, y + .44, .07), color(hue));
+    face.panel(a, y - .16, b, y, width, hue);
+  }
+}
+
 function pitchedRoof(mesh, x, z, width, depth, height, rise, palette, style) {
   const x0 = x - width / 2 - .32;
   const x1 = x + width / 2 + .32;
@@ -161,17 +239,12 @@ function storefront(mesh, face, width, palette, stripes) {
     face.panel(low, .25, high, 3.25, .031, palette.frame);
     face.panel(low + .1, .52, high - .1, 2.48, .043, unit % 2 ? '#6b8587' : '#8b9284', 'glass');
     face.panel(low + .1, 2.06, high - .1, 2.13, .06, palette.frame);
-    face.panel(low + .16, 2.68, high - .16, 3.11, .05, stripes[unit % stripes.length]);
+    const trim = stripes[unit % stripes.length];
+    face.panel(low + .16, 2.75, high - .16, 3.18, .05, trim);
+    face.panel(center - .06, .52, center + .06, 2.48, .062, palette.frame);
+    face.ledge(low - .05, .18, high + .05, .275, .32, palette.base);
     if (unit % 2) continue;
-    const band = (high - low) / 9;
-    for (let stripe = 0; stripe < 9; stripe++) {
-      const a = low + stripe * band;
-      const b = a + band;
-      const hue = stripe % 2 ? '#ded4b6' : stripes[unit % stripes.length];
-      mesh.quad(face.point(a, 2.4, 1.05), face.point(b, 2.4, 1.05),
-        face.point(b, 2.77, .03), face.point(a, 2.77, .03), color(hue));
-      face.panel(a, 2.26, b, 2.41, 1.05, hue);
-    }
+    stripeAwning(mesh, face, low, high, 2.39, 1.16, trim, '#ded4b6');
   }
 }
 
@@ -198,8 +271,8 @@ function building(mesh, obstacles, random, x, z, width, depth, floors, style, pa
   const faces = [
     { face: facadeFace(mesh, x, z1, 0, 1), span: width, front: front === 1 },
     { face: facadeFace(mesh, x, z0, 0, -1), span: width, front: front === -1 },
-    { face: facadeFace(mesh, x1, z, 1, 0), span: depth, front: false },
-    { face: facadeFace(mesh, x0, z, -1, 0), span: depth, front: false },
+    { face: facadeFace(mesh, x1, z, 1, 0), span: depth, front: front === 2 },
+    { face: facadeFace(mesh, x0, z, -1, 0), span: depth, front: front === -2 },
   ];
   for (const { face, span, front: main } of faces) {
     const bays = Math.max(2, Math.round(span / (modern ? 3.4 : style === 'gable' ? 3.7 : 3.15)));
@@ -225,12 +298,29 @@ function building(mesh, obstacles, random, x, z, width, depth, floors, style, pa
   }
 }
 
+const treeTints = [
+  ['#334d33', '#4c6b44', '#658253', '#789056'],
+  ['#404b35', '#616946', '#808452', '#969753'],
+  ['#364d3e', '#506a52', '#65816a', '#819873'],
+];
+
 function tree(mesh, obstacles, x, z, size, y = CURB) {
-  mesh.cylY(x, y, z, .22 * size, 2.7 * size, '#665444', 6);
-  mesh.cylY(x, y + .01, z, .58 * size, .06, '#746b50', 8);
-  mesh.sphere(x, y + 3.48 * size, z, 1.32 * size, 1.62 * size, 1.31 * size, '#506d44', 8, 5);
-  mesh.sphere(x - .68 * size, y + 3.72 * size, z + .29 * size, 1.13 * size, 1.3 * size, .96 * size, '#658451', 7, 4);
-  mesh.sphere(x + .57 * size, y + 4.01 * size, z - .38 * size, .96 * size, 1.38 * size, 1.16 * size, '#789154', 7, 4);
+  const sample = randomFrom(Math.round(x * 127 - z * 111));
+  const shades = treeTints[Math.floor(sample() * treeTints.length)];
+  mesh.cylY(x, y, z, .22 * size, 2.95 * size, '#665648', 8);
+  mesh.cylY(x, y + .01, z, .67 * size, .045, '#746b50', 10);
+  mesh.sphere(x, y + 3.89 * size, z, 1.48 * size, 1.53 * size, 1.45 * size, shades[0], 9, 5);
+  const phase = sample() * Math.PI * 2;
+  const lobes = Math.abs(x) < 80 && Math.abs(z) < 80 ? 5 : 3;
+  for (let lobe = 0; lobe < lobes; lobe++) {
+    const angle = phase + lobe * (2 * Math.PI / lobes);
+    const radius = (.76 + sample() * .32) * size;
+    const crown = (.79 + sample() * .37) * size;
+    const height = (3.67 + sample() * 1.18) * size;
+    mesh.sphere(x + Math.cos(angle) * radius, y + height, z + Math.sin(angle) * radius,
+      crown, crown * (1.02 + sample() * .24), crown * .91, shades[1 + lobe % 3], 7, 4);
+  }
+  mesh.sphere(x + .21 * size, y + 4.96 * size, z - .27 * size, .95 * size, 1.02 * size, .85 * size, shades[3], 8, 4);
   footprint(obstacles, x - .21 * size, z - .21 * size, x + .21 * size, z + .21 * size, 'tree');
 }
 
@@ -299,6 +389,13 @@ function parkingSign(mesh, obstacles, x, z, side) {
   footprint(obstacles, x - .045, z - .045, x + .045, z + .045, 'street-furniture');
 }
 
+function bollard(mesh, obstacles, x, z) {
+  mesh.cylY(x, CURB, z, .091, .63, '#505751', 7);
+  mesh.cylY(x, .67, z, .093, .06, '#b4ac8c', 7);
+  mesh.cylY(x, .731, z, .066, .11, '#4d554d', 7);
+  footprint(obstacles, x - .095, z - .095, x + .095, z + .095, 'bollard');
+}
+
 function parkedCar(mesh, obstacles, x, z, hue, direction) {
   const point = (a, y, b) => [x + a * direction, y, z + b * direction];
   const box = (x0, y0, z0, x1, y1, z1, hex) => {
@@ -346,6 +443,23 @@ function park(mesh, obstacles, x, z) {
     footprint(obstacles, px - 1.8, pz - 1.2, px + 1.8, pz + 1.2, 'planter');
     bench(mesh, obstacles, x + dx * 6.4, z + dz * 4.8);
   }
+  const walk = '#bdb29b';
+  ground(mesh, x - 2.4, z + 22, x + 2.4, z + 26.4, CURB + .018, walk, 'paving');
+  for (const dir of [-1, 1]) {
+    const center = x + dir * 13;
+    mesh.box(center - 7.5, CURB, z + 21.65, center + 7.5, .44, z + 22.15, '#8f8b78', 'paving');
+    mesh.box(center - 7.55, .42, z + 21.60, center + 7.55, .55, z + 22.20, '#b5ab92');
+    mesh.box(center - 7.45, .92, z + 21.89, center + 7.45, .98, z + 21.95, '#434e45');
+    for (let slat = -7.4; slat <= 7.4; slat += .54) {
+      mesh.box(center + slat - .022, .54, z + 21.9, center + slat + .022, .98, z + 21.94, '#4d594d');
+    }
+    footprint(obstacles, center - 7.55, z + 21.6, center + 7.55, z + 22.2, 'planter');
+    const gate = x + dir * 3.55;
+    mesh.box(gate - .34, CURB, z + 21.49, gate + .34, 1.47, z + 22.31, '#a49b85', 'plaster');
+    mesh.box(gate - .41, 1.44, z + 21.42, gate + .41, 1.57, z + 22.38, '#c4b79a');
+    footprint(obstacles, gate - .34, z + 21.49, gate + .34, z + 22.31, 'planter');
+    tree(mesh, obstacles, x + dir * 8.5, z + 20.35, 1.05, CURB + .01);
+  }
 }
 
 function market(mesh, obstacles, x, z, random) {
@@ -355,7 +469,12 @@ function market(mesh, obstacles, x, z, random) {
   ground(mesh, x - 18.7, z - 15.7, x + 18.7, z + 15.7, CURB + .019, '#c4b7a0', 'paving');
   building(mesh, obstacles, random, x - 14.2, z + 13.6, 19, 15.7, 3, 'brick', PALETTES[5], -1);
   building(mesh, obstacles, random, x + 9, z + 13.6, 23, 15.7, 3, 'shop', PALETTES[0], -1);
-  const fountainX = x + 3.8;
+  const cafe = facadeFace(mesh, x + 9, z + 5.75, 0, -1);
+  cafe.panel(-4.55, 3.3, 4.55, 4.33, .065, '#517268');
+  cafe.panel(-4.4, 3.4, 4.4, 4.23, .073, '#38544e');
+  lettering(cafe, 'CAFE AM MARKT', 0, 3.57, .064, .083, '#e1ce9a');
+  building(mesh, obstacles, random, x - 18.4, z - 6.1, 9.1, 14.4, 3, 'historic', PALETTES[1], 2);
+  const fountainX = x + 6.3;
   const fountainZ = z - 8.1;
   mesh.cylY(fountainX, CURB, fountainZ, 4.25, .44, '#9f998c', 20);
   mesh.cylY(fountainX, .58, fountainZ, 3.84, .039, '#708b88', 20, 'water');
@@ -369,6 +488,15 @@ function market(mesh, obstacles, x, z, random) {
   tree(mesh, obstacles, x + 17, z - 12.2, 1.17);
   bench(mesh, obstacles, x - 11, z - 8.2);
   bench(mesh, obstacles, x + 15, z - 8.2);
+  for (const dz of [-15, -8, 9, 16]) bollard(mesh, obstacles, x + 23.5, z + dz);
+  for (const dx of [-17, 13, 20]) bollard(mesh, obstacles, x + dx, z - 22.2);
+  const standX = x - 12.1, standZ = z + .3;
+  const counter = facadeFace(mesh, standX, standZ, 1, 0);
+  mesh.box(standX - 1.8, CURB, standZ - 2.15, standX - .47, 2.17, standZ + 2.15, '#784f39', 'plaster');
+  mesh.box(standX - .55, .89, standZ - 2.2, standX + .27, 1.11, standZ + 2.2, '#ae8962');
+  for (const end of [-2.05, 2.05]) mesh.box(standX + .08, 1.11, standZ + end - .07, standX + .21, 2.46, standZ + end + .07, '#502f25');
+  stripeAwning(mesh, counter, -2.26, 2.26, 2.34, .88, '#a46a4c', '#d7bb8e');
+  footprint(obstacles, standX - 1.8, standZ - 2.2, standX + .27, standZ + 2.2, 'street-furniture');
 }
 
 function station(mesh, obstacles, x, z, random) {
@@ -400,6 +528,51 @@ function station(mesh, obstacles, x, z, random) {
   bench(mesh, obstacles, x + 14.5, z - 12);
   tree(mesh, obstacles, x - 20, z - 15, .86);
   tree(mesh, obstacles, x + 20, z - 15, .9);
+
+  const frontX = x - 19;
+  const entranceZ = z + 5.8;
+  const west = facadeFace(mesh, frontX, entranceZ, -1, 0);
+  west.ledge(-8.4, .16, 8.4, .39, 2.7, '#9f9787');
+  west.ledge(-7.95, .37, 7.95, .54, 2.21, '#b5a88f');
+  west.ledge(-7.7, .52, 7.7, 3.98, .27, palette.trim);
+  west.panel(-7.16, .6, 7.16, 3.65, .282, '#383c3d');
+  for (let bay = -3; bay <= 3; bay++) {
+    const u = bay * 2;
+    west.panel(u - .9, .61, u + .9, 3.41, .293, bay === 0 ? '#8d927a' : '#485f64', 'glass');
+    west.panel(u - .9, 2.77, u + .9, 2.88, .31, '#3b4b49');
+    west.panel(u - .035, .62, u + .035, 2.76, .314, '#baac90');
+    west.panel(u - .37, 1.43, u - .12, 1.5, .323, '#d3bc86');
+  }
+  for (const u of [-7.75, 7.75]) {
+    west.ledge(u - .16, .36, u + .16, 4.26, 2.37, '#665a4f');
+  }
+  west.ledge(-8.6, 3.89, 8.6, 4.13, 2.87, '#4d514e');
+  west.ledge(-8.7, 4.12, 8.7, 5.04, 2.2, '#59625f');
+  west.panel(-8.35, 4.19, 8.35, 4.97, 2.214, '#303f3e');
+  lettering(west, 'BAHNHOF', 0, 4.25, .092, 2.226, '#ddc592');
+  footprint(obstacles, frontX - 2.72, entranceZ - 8.4, frontX + .01, entranceZ + 8.4, 'building');
+  for (const delta of [-10.9, 10.9]) bollard(mesh, obstacles, frontX - 4.35, entranceZ + delta);
+
+  const stopX = x - 23.6, stopZ = z + 19.7;
+  for (const side of [-1, 1]) {
+    const supportZ = stopZ + side * 2.68;
+    mesh.box(stopX - .77, CURB, supportZ - .056, stopX - .66, 2.62, supportZ + .056, '#4d5851');
+    mesh.box(stopX + .61, CURB, supportZ - .056, stopX + .72, 2.62, supportZ + .056, '#4d5851');
+  }
+  mesh.box(stopX - .91, 2.57, stopZ - 2.93, stopX + .87, 2.75, stopZ + 2.93, '#4f665d');
+  const shelter = facadeFace(mesh, stopX + .57, stopZ, -1, 0);
+  shelter.panel(-2.67, .39, 2.67, 2.51, .023, '#839c97', 'glass');
+  shelter.panel(-2.58, 1.38, 2.58, 1.48, .043, '#bdc9b7');
+  shelter.ledge(-1.77, .64, 1.77, .76, .8, '#826c50');
+  footprint(obstacles, stopX - .77, stopZ - 2.75, stopX + .72, stopZ + 2.75, 'street-furniture');
+  const stopSignX = stopX - 1.33;
+  const stopSignZ = stopZ - 3.42;
+  mesh.cylY(stopSignX, CURB, stopSignZ, .045, 3, '#656d65', 6);
+  const sign = facadeFace(mesh, stopSignX, stopSignZ, -1, 0);
+  sign.panel(-.29, 2.59, .29, 3.17, .056, '#375742');
+  sign.panel(-.23, 2.65, .23, 3.11, .064, '#d9c56c');
+  lettering(sign, 'H', 0, 2.72, .045, .075, '#375742');
+  footprint(obstacles, stopSignX - .05, stopSignZ - .05, stopSignX + .05, stopSignZ + .05, 'street-furniture');
 }
 
 function service(mesh, obstacles, x, z, random) {
@@ -418,15 +591,20 @@ function service(mesh, obstacles, x, z, random) {
 
 function sidewalk(mesh, x0, z0, x1, z1, paving) {
   if (x1 <= x0 || z1 <= z0) return;
-  mesh.box(x0, -.012, z0, x1, CURB - .029, z1, CURB_STONE);
-  mesh.box(x0 + .16, CURB - .03, z0 + .16, x1 - .16, CURB, z1 - .16, paving, 'paving');
+  mesh.box(x0, -.012, z0, x1, CURB_EDGE, z1, CURB_STONE);
+  const low = [[x0, CURB_EDGE, z0], [x0, CURB_EDGE, z1], [x1, CURB_EDGE, z1], [x1, CURB_EDGE, z0]];
+  const a = x0 + CURB_BEVEL, b = z0 + CURB_BEVEL;
+  const c = x1 - CURB_BEVEL, d = z1 - CURB_BEVEL;
+  const high = [[a, CURB, b], [a, CURB, d], [c, CURB, d], [c, CURB, b]];
+  for (let i = 0; i < 4; i++) {
+    const next = (i + 1) % 4;
+    mesh.quad(low[i], low[next], high[next], high[i], CURB_STONE);
+  }
+  ground(mesh, a, b, c, d, CURB, paving, 'paving');
 }
 
 function sidewalkBlock(mesh, obstacles, ix, iz, x, z, kind) {
-  const x0 = roads[ix] + widths[ix];
-  const x1 = roads[ix + 1] - widths[ix + 1];
-  const z0 = roads[iz] + widths[iz];
-  const z1 = roads[iz + 1] - widths[iz + 1];
+  const { x0, x1, z0, z1 } = blockBounds(ix, iz);
   const side = baySide(ix, iz);
   const hue = kind === 'market' || kind === 'historic' ? '#b8ae9e' : FOOTWAY;
   if (side === 0) {
@@ -511,8 +689,34 @@ function roadSegment(mesh, axis, center, width, start, end) {
   }
   if (end - start > 22) {
     const slot = (start + end) / 2;
-    patch(center - width + .47, slot - .24, center - width + 1.01, slot + .24, .008, '#696b66');
-    patch(center + .95, slot + 3.5, center + 3.2, slot + 5.2, .007, '#565552', 'asphalt');
+    const at = (u, v, y) => axis === 0 ? [u, y, v] : [v, y, u];
+    const repair = (u0, v0, u1, v1, fill, y) => {
+      const contour = [at(u0, v0, y), at(u0 - .08, v1 - .6, y), at(u1, v1, y), at(u1 + .12, v0 + .35, y)];
+      if (axis === 1) contour.reverse();
+      mesh.quad(...contour, fill, 'asphalt');
+    };
+    if (boulevard) {
+      repair(center + 1.05, slot + 3.25, center + 3.5, slot + 6.4, '#555653', .006);
+      repair(center - 2.45, slot - 9.2, center - 1.8, slot + 1.95, '#454746', .005);
+    }
+    const grate = center - width + .35;
+    patch(grate, slot - .28, grate + .51, slot + .28, .008, '#6b6860');
+    patch(grate + .038, slot - .24, grate + .472, slot + .24, .009, '#444641');
+    for (let bar = -.19; bar <= .20; bar += .078) {
+      patch(grate + .047, slot + bar, grate + .463, slot + bar + .024, .010, '#696d68');
+    }
+    if (boulevard) {
+      const u = center + .9;
+      const v = slot - 7.8;
+      const hub = at(u, v, .007);
+      for (let sector = 0; sector < 12; sector++) {
+        const a = sector * Math.PI / 6;
+        const b = (sector + 1) * Math.PI / 6;
+        const p = at(u + .30 * Math.cos(a), v + .30 * Math.sin(a), .007);
+        const q = at(u + .30 * Math.cos(b), v + .30 * Math.sin(b), .007);
+        mesh.tri(hub, axis === 0 ? q : p, axis === 0 ? p : q, '#62625b');
+      }
+    }
   }
 }
 
@@ -603,10 +807,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
     const z = roads[iz] + BLOCK_SIZE / 2;
     const kind = blockKind(ix, iz);
     const mesh = meshAt(x, z, BLOCK_SIZE / 2);
-    const x0 = roads[ix] + widths[ix];
-    const x1 = roads[ix + 1] - widths[ix + 1];
-    const z0 = roads[iz] + widths[iz];
-    const z1 = roads[iz + 1] - widths[iz + 1];
+    const { x0, x1, z0, z1 } = blockBounds(ix, iz);
     districts.push({ kind, name: districtNames[kind], x0, x1, z0, z1 });
     sidewalkBlock(mesh, obstacles, ix, iz, x, z, kind);
     if (kind === 'park') park(mesh, obstacles, x, z);

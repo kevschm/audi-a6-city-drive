@@ -3,7 +3,7 @@ export const color = (hex, brightness = 1) => {
   return [16, 8, 0].map(shift => Math.min(1, (value >> shift & 255) / 255 * brightness));
 };
 
-const materialId = { asphalt: 1, paving: 2, grass: 3, roof: 4, plaster: 5, brick: 6, glass: 7, water: 8 };
+const materialId = { asphalt: 1, paving: 2, grass: 3, roof: 4, plaster: 5, brick: 6, glass: 7, water: 8, metal: 9 };
 
 export class Mesh {
   constructor() {
@@ -12,7 +12,7 @@ export class Mesh {
     this.buffer = null;
   }
 
-  tri(a, b, c, fill, material) {
+  tri(a, b, c, fill, material, cornerNormals) {
     const ax = b[0] - a[0], ay = b[1] - a[1], az = b[2] - a[2];
     const bx = c[0] - a[0], by = c[1] - a[1], bz = c[2] - a[2];
     const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
@@ -20,17 +20,27 @@ export class Mesh {
     if (length < 1e-10) return;
     const [red, green, blue] = typeof fill === 'string' ? color(fill) : fill;
     const surface = materialId[material] || 0;
-    this.vertices.push(
-      ...a, red, green, blue, nx / length, ny / length, nz / length, surface,
-      ...b, red, green, blue, nx / length, ny / length, nz / length, surface,
-      ...c, red, green, blue, nx / length, ny / length, nz / length, surface,
-    );
+    if (cornerNormals) {
+      // The optional array contains unit normals ordered like the three corners.
+      const [na, nb, nc] = cornerNormals;
+      this.vertices.push(
+        ...a, red, green, blue, ...na, surface,
+        ...b, red, green, blue, ...nb, surface,
+        ...c, red, green, blue, ...nc, surface,
+      );
+    } else {
+      this.vertices.push(
+        ...a, red, green, blue, nx / length, ny / length, nz / length, surface,
+        ...b, red, green, blue, nx / length, ny / length, nz / length, surface,
+        ...c, red, green, blue, nx / length, ny / length, nz / length, surface,
+      );
+    }
     this.count += 3;
   }
 
-  quad(a, b, c, d, fill, material) {
-    this.tri(a, b, c, fill, material);
-    this.tri(a, c, d, fill, material);
+  quad(a, b, c, d, fill, material, cornerNormals) {
+    this.tri(a, b, c, fill, material, cornerNormals?.slice(0, 3));
+    this.tri(a, c, d, fill, material, cornerNormals && [cornerNormals[0], cornerNormals[2], cornerNormals[3]]);
   }
 
   box(x0, y0, z0, x1, y1, z1, fill, material) {

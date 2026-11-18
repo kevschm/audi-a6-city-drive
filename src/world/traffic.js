@@ -12,7 +12,7 @@ const paint = ['#b2b6b3', '#943b37', '#476385', '#4d705e', '#b4a48a', '#55515a',
 
 export function makeTraffic(roads, signals) {
   const junctions = new Set(signals.map(({ intersectionX, intersectionZ }) => `${intersectionX},${intersectionZ}`));
-  const actors = Array.from({ length: 14 }, (_, index) => {
+  const start = Array.from({ length: 14 }, (_, index) => {
     const axis = index % 2;
     const dir = index % 4 < 2 ? 1 : -1;
     const road = roads[Math.floor(index / 2)];
@@ -27,7 +27,17 @@ export function makeTraffic(roads, signals) {
       braking: false,
     };
   });
+  const actors = start.map(actor => ({ ...actor }));
   let elapsed = 0;
+
+  function restart() {
+    elapsed = 0;
+    start.forEach((state, i) => {
+      if (actors[i]) Object.assign(actors[i], state);
+      else actors[i] = { ...state };
+    });
+    actors.length = start.length;
+  }
 
   function signalColor(axis, intersectionX, intersectionZ) {
     const offset = ((intersectionX + intersectionZ + 420) / 70 % 5) * 2;
@@ -101,5 +111,5 @@ export function makeTraffic(roads, signals) {
     actors.forEach((actor, index) => Object.assign(actor, proposed[index]));
   }
 
-  return { actors, step, signalColor };
+  return { actors, step, signalColor, restart };
 }

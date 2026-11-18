@@ -24,7 +24,7 @@ export function createMinimap(canvas, { districts, obstacles }, roads, roadHalfW
     if (x1 - x0 >= 1 && z1 - z0 >= 1) background.fillRect(x0, z0, x1 - x0, z1 - z0);
   }
 
-  return function drawMap(car, traffic) {
+  return function drawMap(car, traffic, gate) {
     const mid = canvas.width / 2;
     context.fillStyle = '#41574d';
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -39,6 +39,17 @@ export function createMinimap(canvas, { districts, obstacles }, roads, roadHalfW
       context.beginPath();
       context.arc(actor.x, -actor.z, 1.65, 0, Math.PI * 2);
       context.fill();
+    }
+    if (gate) {
+      const dx = gate.x - car.x, dz = gate.z - car.z;
+      const k = Math.min(1, (mid / 1.25 - 12) / Math.max(1, Math.hypot(dx, dz)));
+      context.fillStyle = '#ffdc88';
+      context.strokeStyle = '#191b1a';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.arc(car.x + dx * k, -(car.z + dz * k), 5.4, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
     }
     context.restore();
     context.save();
