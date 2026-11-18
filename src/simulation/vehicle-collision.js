@@ -1,4 +1,5 @@
-import { applyImpact } from './vehicle-damage.js';
+import { applyImpact, createDamageState } from './vehicle-damage.js';
+import { CONTACT_MATERIALS, solveContact } from './contact-impulse.js';
 
 // The collision envelope includes the bumpers and tires. Mirrors are cosmetic.
 const PLAYER_HALF_WIDTH = 0.89;
@@ -6,8 +7,8 @@ const PLAYER_HALF_LENGTH = 2.40;
 export const TRAFFIC_HALF_WIDTH = 0.91;
 export const TRAFFIC_HALF_LENGTH = 2.15;
 const SWEEP_STEP = 0.38;
-const MAX_CORNER_RADIUS = Math.hypot(PLAYER_HALF_WIDTH, PLAYER_HALF_LENGTH);
 const limit = (value, max) => Math.max(-max, Math.min(max, value));
+const fixedBody = { x: 0, z: 0, mass: Infinity, inertia: Infinity, vx: 0, vz: 0, yaw: 0 };
 
 function rectangle(x, z, heading, halfWidth, halfLength) {
   const sin = Math.sin(heading);
@@ -19,10 +20,9 @@ function rectangle(x, z, heading, halfWidth, halfLength) {
   };
 }
 
-function axisDepth(a, b, dx, dz, x, z) {
-  const span = (shape) => shape.halfWidth * Math.abs(x * shape.cos - z * shape.sin) +
+function projectedHalfSpan(shape, x, z) {
+  return shape.halfWidth * Math.abs(x * shape.cos - z * shape.sin) +
     shape.halfLength * Math.abs(x * shape.sin + z * shape.cos);
-  return span(a) + span(b) - Math.abs(dx * x + dz * z);
 }
 
 function overlap(a, b) {
@@ -34,7 +34,7 @@ function overlap(a, b) {
   let depth = Infinity, nx = 0, nz = 0;
   for (let i = 0; i < axes.length; i += 2) {
     const x = axes[i], z = axes[i + 1];
-    const candidate = axisDepth(a, b, dx, dz, x, z);
+    const candidate = projectedHalfSpan(a, x, z) + projectedHalfSpan(b, x, z) - Math.abs(dx * x + dz * z);
     if (candidate <= 0) return null;
     if (candidate < depth) {
       const side = dx * x + dz * z < 0 ? -1 : 1;
@@ -43,11 +43,16 @@ function overlap(a, b) {
       nz = z * side;
     }
   }
-  return { depth, nx, nz };
+  const aSpan = projectedHalfSpan(a, -nz, nx), bSpan = projectedHalfSpan(b, -nz, nx);
+  const separation = dx * -nz + dz * nx;
+  const overlapWidth = Math.min(aSpan, separation + bSpan) - Math.max(-aSpan, separation - bSpan);
+  const alignment = Math.max(Math.abs(nx * b.cos - nz * b.sin), Math.abs(nx * b.sin + nz * b.cos));
+  const contactWidth = Math.max(0.07, overlapWidth * Math.max(0.20, (alignment - 0.72) / 0.28));
+  return { depth, nx, nz, contactWidth };
 }
 
 function trafficRectangle(actor) {
-  return rectangle(actor.x, actor.z, actor.heading ?? 0, TRAFFIC_HALF_WIDTH, TRAFFIC_HALF_LENGTH);
+  return rectangle(actor.x, actor.z, actor.heading ?? 0, actor.halfWidth ?? TRAFFIC_HALF_WIDTH, actor.halfLength ?? TRAFFIC_HALF_LENGTH);
 }
 
 export function vehicleOverlapsTraffic(vehicle, actor) {
@@ -55,23 +60,23 @@ export function vehicleOverlapsTraffic(vehicle, actor) {
   return overlap(body, trafficRectangle(actor)) !== null;
 }
 
-function impactPoint(pose, hit) {
+function impactPoint(pose, hit, width, length) {
   const { x, z, heading } = pose;
   const sin = Math.sin(heading), cos = Math.cos(heading);
   const preferredX = (hit.targetX ?? x) - x, preferredZ = (hit.targetZ ?? z) - z;
   const lateral = -hit.nx * cos + hit.nz * sin;
   const longitudinal = -hit.nx * sin - hit.nz * cos;
   const localX = Math.abs(lateral) > 0.075
-    ? Math.sign(lateral) * PLAYER_HALF_WIDTH
-    : limit(preferredX * cos - preferredZ * sin, PLAYER_HALF_WIDTH);
+    ? Math.sign(lateral) * width
+    : limit(preferredX * cos - preferredZ * sin, width);
   const localZ = Math.abs(longitudinal) > 0.075
-    ? Math.sign(longitudinal) * PLAYER_HALF_LENGTH
-    : limit(preferredX * sin + preferredZ * cos, PLAYER_HALF_LENGTH);
+    ? Math.sign(longitudinal) * length
+    : limit(preferredX * sin + preferredZ * cos, length);
   return { x: x + cos * localX + sin * localZ, z: z - sin * localX + cos * localZ, localX, localZ };
 }
 
-function contactAt(x, z, heading, { obstacles = [], traffic = [], bounds = 238 }) {
-  const body = rectangle(x, z, heading, PLAYER_HALF_WIDTH, PLAYER_HALF_LENGTH);
+function contactAt(vehicle, width, length, x, z, heading, { obstacles = [], traffic = [], props = [], bounds = 238 }) {
+  const body = rectangle(x, z, heading, width, length);
   const xOverflow = Math.abs(x) + body.spanX - bounds;
   const zOverflow = Math.abs(z) + body.spanZ - bounds;
   if (xOverflow > 0 || zOverflow > 0) {
@@ -87,32 +92,37 @@ function contactAt(x, z, heading, { obstacles = [], traffic = [], bounds = 238 }
     const halfWidth = (obstacle.x1 - obstacle.x0) * 0.5;
     const halfLength = (obstacle.z1 - obstacle.z0) * 0.5;
     const hit = overlap(body, rectangle(centerX, centerZ, 0, halfWidth, halfLength));
-    if (hit) return { ...hit, targetX: Math.max(obstacle.x0, Math.min(obstacle.x1, x)), targetZ: Math.max(obstacle.z0, Math.min(obstacle.z1, z)) };
+    if (hit) return { ...hit, material: obstacle.material, targetX: Math.max(obstacle.x0, Math.min(obstacle.x1, x)), targetZ: Math.max(obstacle.z0, Math.min(obstacle.z1, z)) };
   }
   for (const actor of traffic) {
     // Avoid trigonometry for lanes far from the player.
-    if (Math.abs(actor.x - x) > 5 || Math.abs(actor.z - z) > 5) continue;
+    if (actor === vehicle || Math.abs(actor.x - x) > 5 || Math.abs(actor.z - z) > 5) continue;
     const hit = overlap(body, trafficRectangle(actor));
-    if (hit) {
-      const speed = actor.speed || 0, angle = actor.heading || 0;
-      return { ...hit, targetX: actor.x, targetZ: actor.z, vx: speed * Math.sin(angle), vz: speed * Math.cos(angle) };
-    }
+    if (hit) return { ...hit, targetX: actor.x, targetZ: actor.z, actor, material: 'car' };
+  }
+  for (const prop of props) {
+    if (prop.clearance > 0 || prop.y - prop.floor > 0.92 ||
+        Math.abs(prop.x - x) > body.spanX + prop.radius || Math.abs(prop.z - z) > body.spanZ + prop.radius) continue;
+    const hit = overlap(body, rectangle(prop.x, prop.z, 0, prop.radius, prop.radius));
+    if (hit) return { ...hit, targetX: prop.x, targetZ: prop.z, prop, material: prop.material };
   }
   return null;
 }
 
 export function moveVehicle(vehicle, dt, world) {
   const { x, z, heading } = vehicle;
+  const width = vehicle.halfWidth ?? PLAYER_HALF_WIDTH, length = vehicle.halfLength ?? PLAYER_HALF_LENGTH;
   const dx = vehicle.vx * dt, dz = vehicle.vz * dt, turn = vehicle.yaw * dt;
   const distance = Math.hypot(dx, dz);
   if (distance + Math.abs(turn) < 1e-9) return;
-  const steps = Math.max(1, Math.ceil((distance + Math.abs(turn) * MAX_CORNER_RADIUS) / SWEEP_STEP));
+  const steps = Math.max(1, Math.ceil((distance + Math.abs(turn) * Math.hypot(width, length)) / SWEEP_STEP));
 
   // A traffic vehicle or a relocated obstacle can already be overlapping the
   // player. Permit escape while overlap with that contact is decreasing.
-  const initial = contactAt(x, z, heading, world);
+  const at = fraction => contactAt(vehicle, width, length, x + dx * fraction, z + dz * fraction, heading + turn * fraction, world);
+  const initial = at(0);
   const blockingContact = (fraction) => {
-    const hit = contactAt(x + dx * fraction, z + dz * fraction, heading + turn * fraction, world);
+    const hit = at(fraction);
     if (initial && hit && initial.nx * hit.nx + initial.nz * hit.nz > 0.99 && hit.depth < initial.depth) return null;
     return hit;
   };
@@ -139,23 +149,53 @@ export function moveVehicle(vehicle, dt, world) {
       }
     }
     const pose = { x: x + dx * allowed, z: z + dz * allowed, heading: heading + turn * allowed };
-    const point = impactPoint(pose, hit);
-    const armX = point.x - pose.x, armZ = point.z - pose.z;
-    const relativeX = vehicle.vx - (hit.vx || 0), relativeZ = vehicle.vz - (hit.vz || 0);
-    const incoming = relativeX * hit.nx + relativeZ * hit.nz;
-    const lever = armZ * hit.nx - armX * hit.nz;
-    const closing = Math.max(0, -incoming - vehicle.yaw * lever);
-    const tangent = (relativeZ - vehicle.yaw * armX) * hit.nx - (relativeX + vehicle.yaw * armZ) * hit.nz;
-    const rub = Math.min(Math.abs(tangent), closing * 0.23);
-    const friction = Math.sign(tangent) * rub;
-    const rebound = closing * (closing < 4 ? 0.09 : 0.055);
-    vehicle.collisionImpact = Math.max(closing, Math.abs(vehicle.yaw) * 0.6);
-    const response = Math.max(0, -incoming) + rebound;
-    vehicle.vx += response * hit.nx + friction * hit.nz;
-    vehicle.vz += response * hit.nz - friction * hit.nx;
-    const angularKick = limit(lever * closing * 0.051, 0.68);
-    vehicle.yaw = vehicle.yaw * 0.44 + angularKick;
-    applyImpact(vehicle, closing, Math.abs(tangent), hit.nx, hit.nz, point.x, point.z, point.localX, point.localZ, pose.heading);
+    const point = impactPoint(pose, hit, width, length);
+    const actor = hit.actor, prop = hit.prop;
+    const peer = actor || prop;
+    const materialName = hit.material || 'concrete';
+    const material = CONTACT_MATERIALS[materialName];
+    const other = actor ? {
+      x: actor.x, z: actor.z, mass: actor.mass ?? 1420, inertia: actor.inertia ?? 2180,
+      vx: actor.vx ?? (actor.speed || 0) * Math.sin(actor.heading || 0),
+      vz: actor.vz ?? (actor.speed || 0) * Math.cos(actor.heading || 0), yaw: actor.yaw ?? 0,
+    } : prop || fixedBody;
+    const impact = solveContact({ ...pose, vx: vehicle.vx, vz: vehicle.vz, yaw: vehicle.yaw,
+      mass: vehicle.mass, inertia: vehicle.inertia }, other, hit.nx, hit.nz, point.x, point.z, material);
+    const { ix, iz, aYaw, bYaw, closingSpeed, scrapeSpeed, energy, deltaV } = impact;
+    vehicle.vx += ix / vehicle.mass;
+    vehicle.vz += iz / vehicle.mass;
+    vehicle.yaw += aYaw;
+    vehicle.collisionImpact = deltaV;
+    const contactWidth = hit.contactWidth ?? width * 2;
+    const crushEnergy = energy * material.crushShare;
+    if (peer && impact.normalImpulse > 0) {
+      if (actor && !actor.wrecked) {
+        Object.assign(actor, createDamageState(), { wrecked: true, mass: other.mass, inertia: other.inertia,
+          halfWidth: TRAFFIC_HALF_WIDTH, halfLength: TRAFFIC_HALF_LENGTH, km: 0 });
+      }
+      peer.vx = other.vx - ix / other.mass;
+      peer.vz = other.vz - iz / other.mass;
+      peer.yaw = other.yaw + bYaw;
+      if (actor) {
+        const sin = Math.sin(actor.heading), cos = Math.cos(actor.heading);
+        const rx = point.x - other.x, rz = point.z - other.z;
+        applyImpact(actor, closingSpeed, scrapeSpeed, -hit.nx, -hit.nz, point.x, point.z,
+          limit(rx * cos - rz * sin, TRAFFIC_HALF_WIDTH), limit(rx * sin + rz * cos, TRAFFIC_HALF_LENGTH),
+          actor.heading, { crushEnergy: energy * (1 - material.crushShare) });
+      }
+      if (prop) {
+        prop.asleep = false;
+        prop.vy = Math.max(prop.vy, Math.min(3.6, closingSpeed * 0.14));
+        prop.tumble += Math.min(6, closingSpeed * 0.29);
+        // Let a light object clear the car's footprint during the remaining step.
+        const rest = (1 - allowed) * dt;
+        prop.x += prop.vx * rest;
+        prop.z += prop.vz * rest;
+        allowed += (1 - allowed) * Math.max(0, 1 - deltaV / Math.max(0.1, Math.hypot(dx, dz) / dt));
+      }
+    }
+    applyImpact(vehicle, closingSpeed, scrapeSpeed, hit.nx, hit.nz, point.x, point.z, point.localX, point.localZ, pose.heading,
+      { ...impact, crushEnergy, contactWidth, material: materialName, stepG: deltaV / (9.81 * dt) });
     break;
   }
 
@@ -163,4 +203,18 @@ export function moveVehicle(vehicle, dt, world) {
   vehicle.z = z + dz * allowed;
   vehicle.heading = heading + turn * allowed;
   vehicle.km += distance * allowed / 1000;
+}
+
+export function stepTrafficWrecks(actors, dt, world) {
+  for (const actor of actors) {
+    if (!actor.wrecked) continue;
+    const drag = Math.exp(-dt * 1.55);
+    actor.vx *= drag;
+    actor.vz *= drag;
+    actor.yaw *= Math.exp(-dt * 2.7);
+    actor.speed = Math.hypot(actor.vx, actor.vz);
+    actor.braking = true;
+    if (actor.speed > 0.045 || Math.abs(actor.yaw) > 0.065) moveVehicle(actor, dt, world);
+    else actor.vx = actor.vz = actor.yaw = actor.speed = 0;
+  }
 }

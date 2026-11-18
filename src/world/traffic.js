@@ -19,7 +19,7 @@ export function makeTraffic(roads, signals) {
     const lane = road + (axis ? -dir : dir) * laneOffset;
     const position = [-179, 125, 95, -50, 113, -113, -152, 165, 168, -85, -47, 102, 33, -61][index];
     return {
-      axis, dir, lane, road, color: paint[index % paint.length], speed: 7.1,
+      axis, dir, lane, road, color: paint[index % paint.length], model: index % 3, speed: 7.1,
       cruise: 7.6 + (index % 5) * 0.85,
       x: axis ? position : lane,
       z: axis ? lane : position,
@@ -33,8 +33,7 @@ export function makeTraffic(roads, signals) {
   function restart() {
     elapsed = 0;
     start.forEach((state, i) => {
-      if (actors[i]) Object.assign(actors[i], state);
-      else actors[i] = { ...state };
+      actors[i] = { ...state };
     });
     actors.length = start.length;
   }
@@ -50,6 +49,7 @@ export function makeTraffic(roads, signals) {
     const approaches = new Map();
     const leaders = new Map();
     for (const actor of actors) {
+      if (actor.wrecked) continue;
       const { axis, dir, road, speed } = actor;
       const position = axis ? actor.x : actor.z;
       for (const cross of roads) {
@@ -78,12 +78,16 @@ export function makeTraffic(roads, signals) {
     return { approaches, leaders };
   }
 
-  function step(dt, player, overlaps, roadHalfWidth) {
+  function step(dt, player, overlaps, roadHalfWidth, props = []) {
     elapsed += dt;
     const { approaches, leaders } = crossingPriority(roadHalfWidth);
-    const peers = [...actors, player];
+    const peers = [...actors, player, ...props.filter(prop => prop.mass >= 20)];
     const proposed = [];
     for (const actor of actors) {
+      if (actor.wrecked) {
+        proposed.push(null);
+        continue;
+      }
       const { axis, dir, lane, speed } = actor;
       const position = axis ? actor.x : actor.z;
       let free = Infinity;

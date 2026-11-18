@@ -125,7 +125,7 @@ function deckPoint(side, z, fraction) {
   return [side * width * fraction, crown - (crown - height) * Math.abs(fraction) ** 2.1, z];
 }
 
-function buildShell(body, paint) {
+function buildShell(body, paint, components) {
   const longitudinal = stations.map(station => station[0]);
   for (const axle of [AVANT_WHEELS.rear, AVANT_WHEELS.front]) {
     for (let step = 0; step <= 16; step++) longitudinal.push(axle - archRadius * Math.cos(Math.PI * step / 16));
@@ -185,7 +185,11 @@ function buildShell(body, paint) {
     for (const side of sides) {
       face(body, [side, 0, 0], seal, [side * low, sillHeight, sillZ], [side * low, sillHeight, z], [side * topWidth, top, z]);
     }
-    bumper(paint, body, end);
+    const part = components?.[end > 0 ? 0 : 1];
+    face(body, out, rgb(46, 48, 49), [-.66, .449, end * 2.375], [.66, .449, end * 2.375],
+      [.65, .559, end * 2.379], [-.65, .559, end * 2.379]);
+    for (const x of [-.44, .44]) body.box(x - .068, .415, end * 2.365 - .012, x + .068, .570, end * 2.365 + .012, rgb(96, 99, 94));
+    bumper(part?.paint ?? paint, part?.trim ?? body, end);
   }
 
   for (const side of sides) {
@@ -243,7 +247,7 @@ function cabinPoint(side, section, height, offset = 0) {
   return [side * (lerp(w0, w1, height) + offset), lerp(y0, y1, height), lerp(z0, z1, height)];
 }
 
-function buildCabin(body, paint, glass, brightwork) {
+function buildCabin(body, paint, glass, brightwork, components) {
   for (let i = 1; i < cabinLine.length; i++) {
     const a = cabinLine[i - 1], b = cabinLine[i];
     for (const side of sides) {
@@ -299,7 +303,9 @@ function buildCabin(body, paint, glass, brightwork) {
     sweep(brightwork, rail, .025, 8, rgb(64, 68, 72));
 
     // Rounded body-colour housing, recessed matte rim and mirror glass.
-    sweep(body, [[side * .774, 1.091, .834], [side * .89, 1.101, .805]], .045, 6, molding);
+    const mirror = components?.[side < 0 ? 2 : 3];
+    const mirrorTrim = mirror?.trim ?? body, mirrorPaint = mirror?.paint ?? paint, mirrorFace = mirror?.bright ?? brightwork;
+    sweep(mirrorTrim, [[side * .774, 1.091, .834], [side * .89, 1.101, .805]], .045, 6, molding);
     const outline = [[-.72, -.83], [.72, -.83], [.95, -.44], [.93, .44], [.65, .82], [-.66, .91], [-.91, .53], [-.98, -.43]];
     const mirrorRing = (index, scale, z) => {
       const [x, y] = outline[index];
@@ -314,10 +320,10 @@ function buildCabin(body, paint, glass, brightwork) {
         return n.map(value => value / Math.hypot(...n));
       };
       const normal = normalAt(back);
-      panel(paint, normal, lacquer, [back, backNext, frontNext, front], normalAt);
-      face(paint, [0, 0, 1], lacquer, [side * .929, 1.117, .867], front, frontNext);
-      face(body, [0, 0, -1], seal, backNext, back, mirrorRing(j, .87, .755), mirrorRing(i, .87, .755));
-      face(brightwork, [0, 0, -1], glassTop,
+      panel(mirrorPaint, normal, lacquer, [back, backNext, frontNext, front], normalAt);
+      face(mirrorPaint, [0, 0, 1], lacquer, [side * .929, 1.117, .867], front, frontNext);
+      face(mirrorTrim, [0, 0, -1], seal, backNext, back, mirrorRing(j, .87, .755), mirrorRing(i, .87, .755));
+      face(mirrorFace, [0, 0, -1], glassTop,
         [side * .929, 1.117, .753], mirrorRing(i, .87, .753), mirrorRing(j, .87, .753));
     }
   }
@@ -458,7 +464,7 @@ function buildHatch(body, paint, brightwork) {
   trace(brightwork, [hatch(.359, .934, 2.396), hatch(.361, .934, 2.396)], .003, out, chrome);
 }
 
-function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeLights, reverseLights, leftSignals, rightSignals }) {
+function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeLights, reverseLights, leftSignals, rightSignals }, frontBumper) {
   const grilleEdge = [0, 0, 1];
   const front = (x, y, z) => [x, y, z];
   const grilleWidth = y => lerp(.321, .345, (y - .761) / .124);
@@ -479,7 +485,8 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
   rings(brightwork, 1, .838, 2.417);
   buildHatch(body, paint, brightwork);
   rings(brightwork, -1, .977, 2.370);
-  plate(body, 1, .507);
+  const frontTrim = frontBumper?.trim ?? body, fog = frontBumper?.bright ?? headLights;
+  plate(frontTrim, 1, .507);
   plate(body, -1, .772);
 
   for (const side of sides) {
@@ -509,12 +516,12 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
     }
     face(indicator, [side, 0, 1], amberGlass, lamp(.823, .759, .011), hd(.852, .774, 2.226),
       hd(.852, .862, 2.226), lamp(.823, .874, .011));
-    face(body, [0, 0, 1], seal, hd(.337, .475, 2.416), hd(.686, .475, 2.397), hd(.677, .543, 2.402), hd(.337, .543, 2.416));
-    face(headLights, [0, 0, 1], rgb(171, 177, 159), hd(.545, .488, 2.419), hd(.659, .488, 2.411), hd(.656, .530, 2.412), hd(.545, .530, 2.419));
+    face(frontTrim, [0, 0, 1], seal, hd(.337, .475, 2.416), hd(.686, .475, 2.397), hd(.677, .543, 2.402), hd(.337, .543, 2.416));
+    face(fog, [0, 0, 1], rgb(171, 177, 159), hd(.545, .488, 2.419), hd(.659, .488, 2.411), hd(.656, .530, 2.412), hd(.545, .530, 2.419));
     for (const x of [.376, .406, .436, .466, .496]) {
-      trace(body, [hd(x, .484, 2.421), hd(x, .534, 2.421)], .008, frontOut, rgb(56, 60, 62));
+      trace(frontTrim, [hd(x, .484, 2.421), hd(x, .534, 2.421)], .008, frontOut, rgb(56, 60, 62));
     }
-    trace(body, [hd(.19, .434, 2.415), hd(.51, .434, 2.415), hd(.671, .435, 2.403),
+    trace(frontTrim, [hd(.19, .434, 2.415), hd(.51, .434, 2.415), hd(.671, .435, 2.403),
       hd(.778, .451, 2.350)], .019, frontOut, rubber);
     const washer = (x, z) => {
       const point = deckPoint(side, z, x);
@@ -616,10 +623,10 @@ function buildWheel(wheel) {
   }
 }
 
-export function buildAvant(parts) {
+export function buildAvant(parts, components) {
   const { body, paint, glass, brightwork, wheel } = parts;
-  buildShell(body, paint);
-  buildCabin(body, paint, glass, brightwork);
-  buildLighting(parts);
+  buildShell(body, paint, components);
+  buildCabin(body, paint, glass, brightwork, components);
+  buildLighting(parts, components?.[0]);
   buildWheel(wheel);
 }
