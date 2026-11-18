@@ -2,7 +2,7 @@
 
 Browser-Fahrsimulation mit einem schwarzmetallic lackierten, eigens modellierten Audi A6 C4 Avant und einem frei befahrbaren europäischen Stadtviertel. Das Spiel ist ein unabhängiges Projekt.
 
-**Spiel starten:** [Audi A6 City Drive](https://audi-a6-city-drive.schmidtkevinprivat.workers.dev/)
+[Öffentliche Spieladresse](https://audi-a6-city-drive.schmidtkevinprivat.workers.dev/)
 
 ## Steuerung
 
@@ -14,9 +14,14 @@ Browser-Fahrsimulation mit einem schwarzmetallic lackierten, eigens modellierten
 | Kamera | V | Kamerataste |
 | Pause | P oder Escape | Pause |
 | Neustart | R | Im Pausenmenü |
+| Scheinwerfer | L | Licht im Fahrtmenü |
+| Blinker | Q / E | Pfeile neben dem Tacho |
+| Bahnhofsrunde | T | Zeitfahrt im Fahrtmenü |
 | Ton und Grafik | Fahrtmenü oben rechts | Fahrtmenü oben rechts |
 
-In Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die Motorhaubenansicht blickt nach vorn über das Fahrzeug. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten.
+Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Zur Auswahl stehen die Verfolger-, Schräg-, Motorhauben- und Frontansicht. Im Pausenmenü lassen sich Tageszeit, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
+
+Für die Bahnhofsrunde vom Startplatz aus durch das erste Tor fahren und den goldenen Markierungen folgen. Die Uhr startet beim Überqueren der ersten Markierung und die Minikarte zeigt das nächste Tor. Die Bestzeit wird im Browser gespeichert.
 
 ## Lokal entwickeln
 
@@ -43,14 +48,14 @@ npm run test:browser
 
 ## Architektur
 
-- `src/render/` enthält den WebGL-Renderer, prozedurale Oberflächen, die Fahrzeuggeometrie und die Grafikstufen. Sektorgrenzen reduzieren die sichtbare Stadtgeometrie. Auto und Hoch nutzen hardwareabhängig eine Schattenkarte. Eco reduziert Auflösung und Sichtweite und verwendet Kontaktschatten.
+- `src/render/` enthält den WebGL-Renderer, prozedurale Oberflächen, spiegelnde Materialien, Tag- und Abendlicht, die Fahrzeuggeometrie und die Grafikstufen. Performance reduziert Pixelbudget und Sichtweite. Balanced ergänzt statische Schatten mit zwischengespeicherter Schattenkarte. Quality ergänzt dynamische Fahrzeugschatten und Kantenglättung über FXAA.
 - `src/world/` erzeugt Stadt, Straßen, Ampeln, Parkbuchten, statische Kollisionen und KI-Verkehr aus lokalem Quellcode.
-- `src/simulation/` berechnet die Fahrt mit 60 Hz. Das planare Zweiachsmodell nutzt einen frontlastigen Schwerpunkt, eine V6-Drehmomentkurve, ein Automatikgetriebe, unterschiedlich griffige Oberflächen und Dämpfung für Hub-, Roll- und Nickbewegung.
-- `src/ui/` enthält Kamera, Minikarte und synthetischen Web-Audio-Ton.
+- `src/simulation/` berechnet die Fahrt mit 60 Hz. Das Zweiachsmodell nutzt einen frontlastigen Schwerpunkt, eine V6-Drehmomentkurve und ein Automatikgetriebe. Vier getrennte Radkontakte liefern Höhe, Schlupf und Grip für gemischte Untergründe. Die Zeitfahrt nutzt dieselbe Simulationsuhr.
+- `src/ui/` enthält Kamera, Minikarte und synthetischen Web-Audio-Ton mit Drehzahl und Last sowie belagsabhängigem Abrollgeräusch.
 
 Das Avant-Modell entstand anhand der Proportionen des [Audi-Datenblatts zum A6 Avant C4](https://www.audi.de/content/dam/nemo/customer-area/more-information/predecessor-models/a6/pdf/a6avc4/1995_06_a6av_c4_28quattro.pdf). Die Fahrphysik verwendet einen angenäherten Frontantrieb. Fahrzeug, Stadt und Audio verwenden eigene prozedurale Assets.
 
-Für diese Version bleibt WebGL erhalten. Der Renderer setzt auf vorhandener gebündelter Geometrie auf und liefert denselben statischen HTTP-Einstieg auf Windows und Mobilgeräten. Three.js kann bei einem späteren Wechsel zu glTF und einem PBR-Asset-Workflow den Szenengraph und die Materialpflege vereinfachen. Rapier bietet einen Raycast-Fahrzeugcontroller für einzelne Radkontakte und 3D-Starrkörper; die derzeitige ebene Stadt nutzt den vorhandenen Simulations- und Kollisionsansatz weiter.
+WebGL und das Zweiachsmodell bleiben erhalten. Die vorhandenen Mesh-Gruppen und Oberflächenhöhen ermöglichen die für diese Version benötigten Reflexionen, Radkontakte und Kollisionen im statischen Build. Ein glTF-Workflow mit vollständigen PBR-Texturen und eine 3D-Starrkörpersimulation sind mögliche nächste Architekturentscheidungen, sobald passende Assets und Gelände vorhanden sind.
 
 ## Veröffentlichung
 
