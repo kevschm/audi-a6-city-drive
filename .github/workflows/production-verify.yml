@@ -1,0 +1,37 @@
+name: Verify live Cloudflare version
+on:
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - src/render/**
+      - src/main.js
+      - .github/workflows/production-verify.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm latest Android WebGL fix is live
+        env:
+          SITE: https://audi-a6-city-drive.schmidtkevinprivat.workers.dev
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            echo "Checking Cloudflare deployment, attempt $attempt/12"
+            if curl -fsSL --max-time 12 -H "Cache-Control: no-cache" "$SITE/?build-verify=android-20261118b-$attempt" -o /tmp/a6-index.html \
+              && grep -Fq 'WEBGL-ANDROID-20261118B' /tmp/a6-index.html \
+              && curl -fsSL --max-time 12 -H "Cache-Control: no-cache" "$SITE/src/render/shaders.js?build-verify=android-20261118b-$attempt" -o /tmp/a6-shaders.js \
+              && grep -Fq 'vEyeDelta = uEye - world.xyz;' /tmp/a6-shaders.js \
+              && grep -Fq 'vec3 delta = vEyeDelta;' /tmp/a6-shaders.js; then
+              echo "PASS: live Cloudflare site serves the corrected Android WebGL shader and build marker"
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then sleep 10; fi
+          done
+          echo "FAIL: Cloudflare is not serving the new HTML and shader yet"
+          exit 1
