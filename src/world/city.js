@@ -309,7 +309,7 @@ function tree(mesh, obstacles, x, z, size, y = CURB) {
   const shades = treeTints[Math.floor(sample() * treeTints.length)];
   mesh.cylY(x, y, z, .22 * size, 2.95 * size, '#665648', 8);
   mesh.cylY(x, y + .01, z, .67 * size, .045, '#746b50', 10);
-  mesh.sphere(x, y + 3.89 * size, z, 1.48 * size, 1.53 * size, 1.45 * size, shades[0], 9, 5);
+  mesh.sphere(x, y + 3.89 * size, z, 1.48 * size, 1.53 * size, 1.45 * size, shades[0], 9, 5, 'foliage');
   const phase = sample() * Math.PI * 2;
   const lobes = Math.abs(x) < 80 && Math.abs(z) < 80 ? 5 : 3;
   for (let lobe = 0; lobe < lobes; lobe++) {
@@ -318,9 +318,9 @@ function tree(mesh, obstacles, x, z, size, y = CURB) {
     const crown = (.79 + sample() * .37) * size;
     const height = (3.67 + sample() * 1.18) * size;
     mesh.sphere(x + Math.cos(angle) * radius, y + height, z + Math.sin(angle) * radius,
-      crown, crown * (1.02 + sample() * .24), crown * .91, shades[1 + lobe % 3], 7, 4);
+      crown, crown * (1.02 + sample() * .24), crown * .91, shades[1 + lobe % 3], 7, 4, 'foliage');
   }
-  mesh.sphere(x + .21 * size, y + 4.96 * size, z - .27 * size, .95 * size, 1.02 * size, .85 * size, shades[3], 8, 4);
+  mesh.sphere(x + .21 * size, y + 4.96 * size, z - .27 * size, .95 * size, 1.02 * size, .85 * size, shades[3], 8, 4, 'foliage');
   footprint(obstacles, x - .21 * size, z - .21 * size, x + .21 * size, z + .21 * size, 'tree');
 }
 
@@ -500,9 +500,39 @@ function market(mesh, obstacles, x, z, random) {
   footprint(obstacles, standX - 1.8, standZ - 2.2, standX + .27, standZ + 2.2, 'street-furniture');
 }
 
+function bicycleParking(mesh, obstacles, x, z) {
+  const spoke = (ax, ay, bx, by, at, hue, thick = 0.018) => {
+    const length = Math.hypot(bx - ax, by - ay);
+    const nx = (by - ay) / length * thick, ny = (ax - bx) / length * thick;
+    mesh.quad([x + ax - nx, CURB + ay - ny, at], [x + ax + nx, CURB + ay + ny, at],
+      [x + bx + nx, CURB + by + ny, at], [x + bx - nx, CURB + by - ny, at], hue);
+  };
+  const frameColors = ['#9b4f3c', '#5c716a', '#577587', '#b8a489'];
+  for (let j = 0; j < 4; j++) {
+    const row = z + j * 0.76, frame = frameColors[j];
+    for (const wheel of [-0.53, 0.53]) {
+      const at = (r, angle) => [x + wheel + Math.cos(angle) * r, CURB + 0.314 + Math.sin(angle) * r, row];
+      for (let i = 0; i < 14; i++) {
+        const a = i * Math.PI / 7, b = (i + 1) * Math.PI / 7;
+        mesh.quad(at(0.314, a), at(0.290, a), at(0.290, b), at(0.314, b), '#282d2c');
+        if (i % 3 === 0) spoke(wheel, 0.314, wheel + Math.cos(a) * 0.29, 0.314 + Math.sin(a) * 0.29, row + 0.001, '#a3a5a0', 0.004);
+      }
+    }
+    for (const [ax, ay, bx, by] of [[-0.53, 0.31, -0.18, 0.65], [-0.53, 0.31, -0.04, 0.35],
+      [-0.18, 0.66, -0.04, 0.35], [-0.04, 0.35, 0.30, 0.64], [-0.18, 0.65, 0.30, 0.64], [0.30, 0.64, 0.53, 0.31]]) {
+      spoke(ax, ay, bx, by, row + 0.003, frame);
+    }
+    spoke(0.30, 0.62, 0.28, 0.83, row, '#474d4b', 0.012);
+    mesh.box(x - 0.29, CURB + 0.71, row - 0.04, x - 0.10, CURB + 0.755, row + 0.04, '#2c3231');
+    mesh.box(x + 0.24, CURB + 0.813, row - 0.09, x + 0.30, CURB + 0.844, row + 0.12, '#323b3b');
+  }
+  footprint(obstacles, x - 0.87, z - 0.2, x + 0.87, z + 2.54, 'bicycle-parking');
+}
+
 function station(mesh, obstacles, x, z, random) {
   const palette = { wall: '#b3a597', trim: '#d8c7ac', roof: '#5e5651', base: '#827973', frame: '#3e4f4e' };
   ground(mesh, x - 24, z - 22, x + 24, z + 22, CURB + .02, '#a5a097', 'paving');
+  bicycleParking(mesh, obstacles, x + 16.1, z - 17.6);
   building(mesh, obstacles, random, x, z + 6, 38, 19, 3, 'brick', palette, -1);
   mesh.box(x - 4.8, .18, z - 5.4, x + 4.8, 3.5, z - 3.51, '#9d907d', 'plaster');
   mesh.box(x - 5.5, 3.36, z - 5.9, x + 5.5, 3.8, z - 3.4, palette.trim);

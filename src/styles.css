@@ -114,6 +114,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--amber); outline
   pointer-events: none;
 }
 .speed { width: 78px; display: grid; justify-items: center; }
+.cockpit-view .cluster { left: auto; right: var(--right); transform: none; }
 .speed span { font-size: 43px; font-weight: 650; line-height: 0.99; letter-spacing: -0.07em; font-variant-numeric: tabular-nums; }
 .speed small { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
 .readout { min-width: 90px; display: grid; gap: 6px; }
@@ -211,6 +212,7 @@ kbd { color: #f5f2e9; font: inherit; font-weight: 700; }
   .actions button { min-height: 40px; }
   #qualityBtn { font-size: 8px; }
   .cluster { padding: 5px 8px; gap: 7px; min-width: 0; }
+  .cockpit-view .cluster { bottom: calc(var(--bottom) + clamp(57px, 18dvh, 81px)); }
   .speed { width: 54px; }
   .speed span { font-size: 32px; }
   .readout { min-width: 76px; gap: 3px; }
