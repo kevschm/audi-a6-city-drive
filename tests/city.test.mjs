@@ -87,3 +87,11 @@ test('wheel contact height rises at pavement curbs and parking-bay edges', () =>
   assert.equal(groundHeightAt(-50, -50), .17);
   assert.equal(groundHeightAt(241, 241), -.032);
 });
+
+test('all street ends have solid barriers aligned before the world boundary', () => {
+  const barriers = city.obstacles.filter(obstacle => obstacle.kind === 'road-end');
+  assert.equal(barriers.length, roads.length * 4);
+  for (const barrier of barriers) {
+    assert.equal(Math.max(Math.abs(barrier.x0), Math.abs(barrier.z0), Math.abs(barrier.x1), Math.abs(barrier.z1)), halfWorld);
+  }
+});

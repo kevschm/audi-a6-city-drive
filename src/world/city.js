@@ -667,6 +667,26 @@ function neighborhood(mesh, obstacles, random, ix, iz, x, z, kind) {
   if (kind === 'mixed') bench(mesh, obstacles, x + 18, z - 18);
 }
 
+function roadEndBarrier(mesh, obstacles, axis, center, width, end) {
+  const inner = end * (EDGE - 0.36), outer = end * EDGE;
+  const z0 = Math.min(inner, outer), z1 = Math.max(inner, outer);
+  const x0 = center - width, x1 = center + width;
+  const box = (a, y0, b, c, y1, d, fill) => {
+    if (axis === 0) mesh.box(a, y0, b, c, y1, d, fill);
+    else mesh.box(b, y0, a, d, y1, c, fill);
+  };
+  box(x0, 0.006, z0, x1, 0.77, z1, '#8d8981');
+  box(x0, 0.70, z0 - 0.022, x1, 0.86, z1 + 0.022, '#d6ccbb');
+  const stripeLow = Math.min(inner, inner - end * 0.02);
+  const stripeHigh = Math.max(inner, inner - end * 0.02);
+  for (let x = x0; x < x1 - 0.12; x += 0.71) {
+    box(x + 0.035, 0.48, stripeLow, Math.min(x1, x + 0.37), 0.685, stripeHigh, '#b54e37');
+    box(x + 0.37, 0.48, stripeLow, Math.min(x1, x + 0.70), 0.685, stripeHigh, '#ded1ac');
+  }
+  if (axis === 0) footprint(obstacles, x0, z0, x1, z1, 'road-end');
+  else footprint(obstacles, z0, x0, z1, x1, 'road-end');
+}
+
 function roadSegment(mesh, axis, center, width, start, end) {
   const patch = (u0, v0, u1, v1, y, hex, material) => {
     if (axis === 0) ground(mesh, u0, v0, u1, v1, y, hex, material);
@@ -780,6 +800,10 @@ export function buildCity({ Mesh, seed = 364844 }) {
 
   for (let i = 0; i < roads.length; i++) {
     const center = roads[i];
+    for (const end of [-1, 1]) {
+      roadEndBarrier(meshAt(center, end * EDGE, widths[i] + 1), obstacles, 0, center, widths[i], end);
+      roadEndBarrier(meshAt(end * EDGE, center, widths[i] + 1), obstacles, 1, center, widths[i], end);
+    }
     for (let j = 0; j <= roads.length; j++) {
       const start = j ? roads[j - 1] + widths[j - 1] : -EDGE;
       const end = j < roads.length ? roads[j] - widths[j] : EDGE;
