@@ -4,21 +4,30 @@ import { spawn } from 'node:child_process';
 
 test('game server serves HTML, JavaScript modules and CSS with correct media types', async (t) => {
   const server = spawn(process.execPath, ['scripts/serve.mjs'], {
-    env: { ...process.env, PORT: '18087' },
+    env: { ...process.env, PORT: '0', HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   t.after(() => server.kill());
-  await new Promise((resolve, reject) => {
+  const port = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Server did not start')), 8000);
     server.once('error', reject);
-    server.stdout.once('data', () => { clearTimeout(timeout); resolve(); });
+    server.stdout.once('data', data => {
+      clearTimeout(timeout);
+      const match = data.toString().match(/localhost:(\d+)/);
+      if (match) resolve(match[1]);
+      else reject(new Error('Server did not report a port'));
+    });
     server.once('exit', (code) => { clearTimeout(timeout); reject(new Error(`Server exited: ${code}`)); });
   });
-  const base = 'http://127.0.0.1:18087';
+  const base = 'http://127.0.0.1:' + port;
   for (const [path, type] of [
     ['/', 'text/html'],
     ['/src/main.js', 'text/javascript'],
     ['/src/simulation/fixed-step.js', 'text/javascript'],
+    ['/src/simulation/vehicle.js', 'text/javascript'],
+    ['/src/world/city.js', 'text/javascript'],
+    ['/src/render/avant.js', 'text/javascript'],
+    ['/src/render/shaders.js', 'text/javascript'],
     ['/src/styles.css', 'text/css'],
   ]) {
     const response = await fetch(base + path);

@@ -1,11 +1,12 @@
 {
   "name": "audi-a6-city-drive",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/main.js && node --check src/simulation/fixed-step.js && node --check scripts/serve.mjs && node --check src/performance/adaptive-resolution.js",
+    "check": "node scripts/check.mjs",
     "test": "node --test tests/*.test.mjs",
+    "test:browser": "npm run build && node tests/browser-smoke.mjs",
     "verify": "npm run check && npm run test && npm run build",
     "build": "node scripts/build.mjs",
     "start": "node scripts/serve.mjs"
