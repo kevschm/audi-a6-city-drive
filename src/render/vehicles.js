@@ -59,7 +59,7 @@ export function buildVehicles(renderer) {
       if (Math.hypot(signal.x - car.x, signal.z - car.z) > 72) continue;
       const phase = signalColor(signal.axis, signal.intersectionX, signal.intersectionZ);
       const index = ['red', 'amber', 'green'].indexOf(phase);
-      objects.push({ mesh: lenses[index], model: transform(signal.x, signal.z, signal.heading, signal.y + (1 - index) * 0.24), emission: 1.6 });
+      objects.push({ mesh: lenses[index], model: transform(signal.x, signal.z, signal.heading, signal.y + (1 - index) * 0.24), emission: 0.48 });
     }
     if (showBody) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll, car.pitch);
