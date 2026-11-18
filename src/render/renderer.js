@@ -1,5 +1,5 @@
 import { basis, identity, intersectsFrustum, multiply, orthographic, perspective, unit, view } from './math.js';
-import { depthFragment, depthVertex, meshFragment, meshVertex, skyFragment, skyVertex } from './shaders.js';
+import { depthFragment, depthVertex, meshFragment, meshVertex, skyFragment, skyVertex } from './shaders.js?webgl-android-fix-20261118';
 
 export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4 };
 const sun = unit([-0.59, 0.64, -0.49]);
