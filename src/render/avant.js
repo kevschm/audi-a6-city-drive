@@ -172,11 +172,19 @@ function buildShell(body, paint) {
     const z = end * 2.39, [, low, , topWidth, top, crown] = bodySection(z);
     const out = [0, 0, end];
     const sillZ = z - end * .075;
-    face(paint, out, lacquer, [-low, sillHeight, sillZ], [low, sillHeight, sillZ], [topWidth, top, z], [-topWidth, top, z]);
+    const nose = (x, y) => [x * lerp(low, topWidth, y), lerp(sillHeight, top, y), lerp(sillZ, z, y)];
+    // Keep enough vertices across both ends for a dent to follow an offset hit.
+    for (let i = -5; i < 5; i++) {
+      const a = i / 5, b = (i + 1) / 5;
+      for (const [lower, upper] of [[0, 0.46], [0.46, 0.76], [0.76, 1]]) {
+        face(paint, out, lacquer, nose(a, lower), nose(b, lower), nose(b, upper), nose(a, upper));
+      }
+      face(paint, out, paintEdge, nose(a, 1), nose(b, 1), [b * topWidth, lerp(top, crown, 1 - Math.abs(b)), z],
+        [a * topWidth, lerp(top, crown, 1 - Math.abs(a)), z]);
+    }
     for (const side of sides) {
       face(body, [side, 0, 0], seal, [side * low, sillHeight, sillZ], [side * low, sillHeight, z], [side * topWidth, top, z]);
     }
-    face(paint, out, paintEdge, [-topWidth, top, z], [topWidth, top, z], [0, crown, z]);
     bumper(paint, body, end);
   }
 
@@ -206,7 +214,8 @@ function buildShell(body, paint) {
 function bumper(paint, body, end) {
   const out = [0, 0, end];
   // The section steps back at the ends so the bumpers wrap onto both quarters.
-  const edge = [[-.862, 2.255], [-.820, 2.327], [-.675, 2.398], [-.530, 2.412], [.530, 2.412], [.675, 2.398], [.820, 2.327], [.862, 2.255]];
+  const edge = [[-.862, 2.255], [-.820, 2.327], [-.675, 2.398], [-.530, 2.412], [-.35, 2.412],
+    [-.18, 2.412], [0, 2.412], [.18, 2.412], [.35, 2.412], [.530, 2.412], [.675, 2.398], [.820, 2.327], [.862, 2.255]];
   for (let i = 1; i < edge.length; i++) {
     const [xa, za] = edge[i - 1], [xb, zb] = edge[i];
     const a = (y, inset = 0) => [xa, y, end * (za - inset)];
@@ -452,11 +461,18 @@ function buildHatch(body, paint, brightwork) {
 function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeLights, reverseLights, leftSignals, rightSignals }) {
   const grilleEdge = [0, 0, 1];
   const front = (x, y, z) => [x, y, z];
+  const grilleWidth = y => lerp(.321, .345, (y - .761) / .124);
   face(brightwork, grilleEdge, nickel, front(-.334, .751, 2.396), front(.334, .751, 2.396), front(.361, .895, 2.396), front(-.361, .895, 2.396));
-  face(body, grilleEdge, seal, front(-.321, .762, 2.402), front(.321, .762, 2.402), front(.347, .884, 2.402), front(-.347, .884, 2.402));
-  for (let i = 0; i < 6; i++) {
-    const y = .775 + i * .018;
-    trace(body, [front(-.315, y, 2.406), front(.315, y, 2.406)], .006, grilleEdge, rgb(77, 85, 92));
+  for (let i = -3; i < 3; i++) {
+    const left = i / 3, right = (i + 1) / 3;
+    const slat = (x, y, z = 2.401) => front(x * grilleWidth(y), y, z);
+    face(body, grilleEdge, seal, slat(left, .761), slat(right, .761), slat(right, .885), slat(left, .885));
+    for (let row = 0; row < 6; row++) {
+      const y = .773 + row * .019;
+      const a = slat(left, y, 2.410), b = slat(right, y, 2.410);
+      face(body, grilleEdge, rgb(28, 33, 36), a, b, slat(right, y + .006, 2.415), slat(left, y + .006, 2.415));
+      trace(body, [slat(left, y + .006, 2.416), slat(right, y + .006, 2.416)], .0024, grilleEdge, rgb(99, 104, 105));
+    }
   }
   const grilleTrim = [front(-.338, .752, 2.407), front(.338, .752, 2.407), front(.359, .889, 2.407), front(-.359, .889, 2.407)];
   trace(brightwork, [...grilleTrim, grilleTrim[0]], .009, grilleEdge, chrome);
@@ -468,7 +484,7 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
 
   for (const side of sides) {
     const indicator = side < 0 ? leftSignals : rightSignals;
-    const amberGlass = rgb(154, 91, 38), amberRib = rgb(110, 62, 31);
+    const amberGlass = rgb(161, 89, 32), amberRib = rgb(113, 58, 27);
     const hd = (x, y, z) => [x * side, y, z];
     const frontOut = [side * .32, 0, 1];
     const lamp = (x, y, depth = 0) => hd(x, y, 2.395 - Math.max(0, x - .59) * .33 + depth);
@@ -481,8 +497,12 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
     lensEllipse(headLights, lamp, frontOut, .620, .817, .053, .031, .011, rgb(218, 216, 194));
     for (let i = 0; i < 17; i++) {
       const x = .396 + i * .0195;
-      trace(headLights, [lamp(x, .768, .015), lamp(x, .866, .015)], .0021, frontOut, rgb(183, 189, 181));
+      const highlight = i % 3 === 0 ? rgb(221, 226, 215) : rgb(169, 178, 174);
+      trace(headLights, [lamp(x, .768, .015), lamp(x + .001, .814, .017), lamp(x + .002, .866, .015)],
+        .0024, frontOut, highlight);
     }
+    for (const y of [.785, .844]) trace(headLights,
+      [lamp(.390, y, .019), lamp(.59, y + .001, .020), lamp(.716, y + .004, .019)], .0018, frontOut, rgb(141, 153, 152));
     lampPanel(indicator, frontOut, lamp, .59, amberGlass, .737, .825, .755, .759, .875, .882, .011);
     for (const x of [.754, .773, .793, .811]) {
       trace(indicator, [lamp(x, .764, .013), lamp(x, .873, .013)], .0021, frontOut, amberRib);
@@ -494,6 +514,14 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
     for (const x of [.376, .406, .436, .466, .496]) {
       trace(body, [hd(x, .484, 2.421), hd(x, .534, 2.421)], .008, frontOut, rgb(56, 60, 62));
     }
+    trace(body, [hd(.19, .434, 2.415), hd(.51, .434, 2.415), hd(.671, .435, 2.403),
+      hd(.778, .451, 2.350)], .019, frontOut, rubber);
+    const washer = (x, z) => {
+      const point = deckPoint(side, z, x);
+      point[1] += .005;
+      return point;
+    };
+    face(body, [0, 1, 0], molding, washer(.55, 2.26), washer(.65, 2.26), washer(.65, 2.29), washer(.55, 2.29));
 
     const wing = (z, y, bulge) => {
       const p = bodyPoint(side, z, y);

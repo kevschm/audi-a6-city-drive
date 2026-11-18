@@ -1,3 +1,5 @@
+import { dentLimit } from '../simulation/vehicle-damage.js';
+
 const noise = `
 float hash(vec2 p) {
   vec3 q = fract(vec3(p.xyx) * 0.1031);
@@ -67,21 +69,39 @@ void main() {
 
 const deformation = `
 uniform vec4 uDamage;
-vec3 dent(vec3 p, out float distress) {
-  if (dot(uDamage, vec4(1.0)) < 0.0001) { distress = 0.0; return p; }
-  vec4 panel = uDamage * vec4(
-    smoothstep(1.37, 2.41, p.z),
-    smoothstep(1.35, 2.42, -p.z),
-    smoothstep(0.59, 0.90, -p.x),
-    smoothstep(0.59, 0.90, p.x)
-  );
-  float height = 1.0 - smoothstep(0.70, 1.30, p.y);
-  float uneven = 0.71 + 0.29 * sin(9.4 * p.x + 5.0 * p.z + 8.0 * p.y);
-  distress = clamp((panel.x + panel.y + panel.z + panel.w) * height, 0.0, 1.0);
-  p.z += (panel.y - panel.x) * height * 0.30 * uneven;
-  p.x += (panel.z - panel.w) * height * 0.18 * uneven;
-  p.y -= (panel.x + panel.y) * height * 0.091 * sin(p.x * 8.3 + 1.1);
-  return p;
+uniform vec4 uDents[${dentLimit}];
+uniform float uRim;
+vec3 dent(vec3 p, out float distress, out vec2 normalShift) {
+  distress = 0.0;
+  normalShift = vec2(0.0);
+  if (uRim > 0.001) {
+    float angle = atan(p.y, p.z + 0.00001);
+    float flatSpot = max(0.0, cos(angle - 1.2));
+    flatSpot *= flatSpot * flatSpot;
+    p.yz *= 1.0 - uRim * (0.16 + 0.25 * flatSpot);
+    p.x += uRim * p.y * 0.23;
+    distress = uRim * flatSpot * 0.75;
+  }
+  if (dot(uDamage, vec4(1.0)) < 0.0001) return p;
+  vec3 moved = p;
+  float height = 1.0 - smoothstep(0.84, 1.34, p.y);
+  for (int i = 0; i < ${dentLimit}; i++) {
+    vec4 hit = uDents[i];
+    bool bumper = hit.w < 1.5;
+    vec2 inward = bumper ? vec2(0.0, hit.w < 0.5 ? -1.0 : 1.0)
+                         : vec2(hit.w < 2.5 ? 1.0 : -1.0, 0.0);
+    vec2 delta = p.xz - hit.xy;
+    vec2 scaled = delta / (bumper ? vec2(0.63, 1.25) : vec2(0.67, 0.91));
+    float envelope = max(0.0, 1.0 - dot(scaled, scaled));
+    float force = hit.z * height * envelope;
+    distress += force;
+    float crease = 0.81 + 0.19 * sin(19.0 * dot(delta, inward.yx) + p.y * 11.0);
+    moved.xz += inward * force * envelope * crease * (bumper ? 0.55 : 0.39);
+    moved.y -= force * envelope * 0.11 * sin(p.y * 8.0 + 1.5);
+    normalShift -= scaled * force * envelope * 0.87;
+  }
+  distress = min(1.0, distress);
+  return p + clamp(moved - p, vec3(-0.50, -0.15, -0.58), vec3(0.50, 0.15, 0.58));
 }
 `;
 
@@ -105,7 +125,8 @@ varying float vMaterial;
 varying float vDistress;
 ${deformation}
 void main() {
-  vec3 local = dent(aPos, vDistress);
+  vec2 normalShift;
+  vec3 local = dent(aPos, vDistress, normalShift);
   if (uStride != 0.0 && local.y < 0.85) {
     float stride = uStride * sign(local.x) * (1.0 - local.y / 0.85);
     local.z += 0.22 * stride;
@@ -115,7 +136,7 @@ void main() {
   vWorld = world.xyz;
   vEyeDelta = uEye - world.xyz;
   vLocal = aPos;
-  vNormal = mat3(uModel) * aNormal;
+  vNormal = mat3(uModel) * normalize(aNormal + vec3(normalShift.x, 0.0, normalShift.y));
   vColor = aColor;
   vMaterial = aMaterial;
   vShadow = uLight * world;
@@ -285,10 +306,20 @@ void main() {
   }
   vec3 base = baseColor * baseColor;
   vec3 lit = base * (ambient + visibility * direct * sunLight) * surfaceGrain(n, d);
-  if (vMaterial > 9.5) {
+  if (vMaterial > 9.5 && vMaterial < 10.5) {
     float density = noise2((vWorld.xz + vWorld.y * vec2(0.43, 0.59)) * 12.0);
     lit *= 0.86 + 0.29 * density;
     lit += base * pow(max(0.0, dot(-n, uSun)), 2.0) * vec3(0.24, 0.35, 0.13);
+  }
+  if (vMaterial > 10.5) {
+    vec2 surface = vec2(vLocal.x + vLocal.z * 0.37, vLocal.y + vLocal.z * 0.63);
+    if (vMaterial < 11.5) {
+      lit *= mix(1.0, 0.92 + 0.16 * noise2(surface * 430.0), 1.0 - smoothstep(0.4, 1.5, d));
+    } else {
+      float curl = noise2(surface * 13.0);
+      float grain = sin(surface.y * 245.0 + surface.x * 28.0 + curl * 9.0) * 0.5 + 0.5;
+      lit *= 0.68 + grain * 0.32 + 0.27 * curl;
+    }
   }
   lit += base * headlight(n) * vec3(1.0, 0.85, 0.66);
   lit += base * streetLight(n) * vec3(1.0, 0.72, 0.39);
@@ -381,7 +412,8 @@ uniform mat4 uModel;
 ${deformation}
 void main() {
   float distress;
-  gl_Position = uLight * uModel * vec4(dent(aPos, distress), 1.0);
+  vec2 normalShift;
+  gl_Position = uLight * uModel * vec4(dent(aPos, distress, normalShift), 1.0);
 }
 `;
 

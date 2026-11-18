@@ -1,14 +1,14 @@
 import { createAdaptiveResolution } from './performance/adaptive-resolution.js';
 import { createFixedStepClock } from './simulation/fixed-step.js';
 import { createVehicleState, stepVehicle, vehicleOverlapsTraffic } from './simulation/vehicle.js';
-import { damageAreas } from './simulation/vehicle-damage.js';
+import { damageAreas, wheelNames } from './simulation/vehicle-damage.js';
 import { createTimeTrial, formatTrialTime } from './simulation/time-trial.js';
 import { buildCity, districtAt, groundHeightAt, halfWorld, roads, roadHalfWidth, roadSurfaceAt, startPosition } from './world/city.js';
 import { makeTraffic } from './world/traffic.js';
 import { makeWalkers } from './world/walkers.js';
 import { clamp, lerp, mixAngle } from './render/math.js';
 import { Mesh } from './render/mesh.js';
-import { createRenderer, GRAPHICS } from './render/renderer.js?drive-070';
+import { createRenderer, GRAPHICS } from './render/renderer.js?drive-080';
 import { createImpactEffects } from './render/impact-effects.js';
 import { buildVehicles } from './render/vehicles.js';
 import { createActorModels } from './render/city-actors.js';
@@ -153,7 +153,7 @@ function boot() {
   }
 
   function draw(dt, interpolation = 1) {
-    visible.damage = car.damage;
+    for (const field of ['damage', 'dents', 'wheelDamage', 'axleDamage']) visible[field] = car[field];
     visible.rpm = car.rpm;
     for (const field of ['brakeLights', 'reverseLights']) visible[field] = car[field];
     for (const field of visualFields) visible[field] = lerp(previous[field], car[field], interpolation);
@@ -194,6 +194,15 @@ function boot() {
     for (const [index, panel] of [...$('conditionPanels').children].entries()) {
       panel.dataset.level = car.damage[index] < 0.035 ? 'intact' : car.damage[index] < 0.32 ? 'scuffed' : 'damaged';
     }
+    const wheel = Math.max(...car.wheelDamage);
+    const axle = Math.max(...car.axleDamage);
+    const runningGear = $('runningGear');
+    runningGear.hidden = wheel < 0.10 && axle < 0.11;
+    if (!runningGear.hidden) {
+      const corner = car.wheelDamage.indexOf(wheel);
+      const label = wheel >= axle ? wheelNames[corner] : car.axleDamage[0] >= car.axleDamage[1] ? 'Vorderachse' : 'Hinterachse';
+      runningGear.textContent = label;
+    }
     $('place').textContent = districtAt(car.x, car.z) + ' · ' + surfaces[car.surface] + (world.wetness ? ' nass' : '');
     $('leftSignal').classList.toggle('lit', signal < 0 && signalTime % 0.72 < 0.39);
     $('rightSignal').classList.toggle('lit', signal > 0 && signalTime % 0.72 < 0.39);
@@ -226,7 +235,10 @@ function boot() {
     if (car.impact && time - collisionAt > 260) {
       effects.emit(car.impact);
       impactShake = Math.min(2.4, car.impact.closingSpeed / 8);
-      if (car.impact.change > 0.09) notify('Aufprall · ' + damageAreas[car.impact.area]);
+      if (car.impact.change > 0.09) {
+        const region = car.impact.wheelChange >= 0.10 ? wheelNames[car.impact.wheel] : damageAreas[car.impact.area];
+        notify('Aufprall · ' + region);
+      }
       if (audioEnabled) audio.impact(car.impact);
       collisionAt = time;
     }

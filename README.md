@@ -19,11 +19,11 @@ Browser-Fahrsimulation mit einem schwarzmetallic lackierten, eigens modellierten
 | Bahnhofsrunde | T | Zeitfahrt im Fahrtmenü |
 | Ton und Grafik | Fahrtmenü oben rechts | Fahrtmenü oben rechts |
 
-Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die freie Kamera lässt sich um das Auto drehen, neigen und zoomen. Die Cockpitkamera zeigt ein lenkbares Lenkrad und Instrumente für Geschwindigkeit und Drehzahl. Im Pausenmenü lassen sich Tageszeit, Fahrbahnzustand, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
+Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die freie Kamera lässt sich um das Auto drehen, neigen und zoomen. Im Cockpit bewegen sich das Vier-Speichen-Lenkrad, der Tachometer und der Drehzahlmesser mit dem Fahrzeugzustand. Das Licht schaltet die Instrumentenbeleuchtung heller. Im Pausenmenü lassen sich Tageszeit, Fahrbahnzustand, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
 
 Auf nasser Fahrbahn stehen weniger Reifenkräfte zur Verfügung. Bremswege verlängern sich und die Räder werfen Sprühnebel auf. Das Quality-Profil zeichnet für nasse Straßen eine niedrig aufgelöste Spiegelansicht. Balanced und Performance nutzen eine günstigere Umgebungsreflexion.
 
-Aufprall und Streifkontakt erzeugen lokale Schäden. Je nach Aufprallstelle können Leuchten Sprünge zeigen und schwächer werden, die Motorleistung sinken oder die Lenkung zur Seite ziehen. Nach einem schweren Frontaufprall tritt Dampf aus. Reset repariert das Fahrzeug und stellt es an den Start.
+Aufprall und Streifkontakt hinterlassen Dellen um die ermittelte Kontaktstelle. Mehrere Treffer bleiben sichtbar, bis das Fahrzeug zurückgesetzt wird. Treffer am Rad können das Rad sichtbar schräg stellen, die Spur verziehen und ein periodisches Abrollgeräusch auslösen. Ein schwerer Stoß kann die betroffene Achse schwächen. Die Instrumentenanzeige nennt den stärksten Rad- oder Achsschaden. Reset repariert das Fahrzeug und stellt es an den Start.
 
 Für die Bahnhofsrunde vom Startplatz aus durch das erste Tor fahren und den goldenen Markierungen folgen. Die Uhr startet beim Überqueren der ersten Markierung und die Minikarte zeigt das nächste Tor. Die Bestzeit wird im Browser gespeichert.
 
@@ -58,6 +58,8 @@ npm run test:browser
 - `src/ui/` enthält Kamera, Minikarte und synthetischen Web-Audio-Ton mit Drehzahl und Last sowie belagsabhängigem Abrollgeräusch.
 
 Das Avant-Modell entstand anhand der Proportionen des [Audi-Datenblatts zum A6 Avant C4](https://www.audi.de/content/dam/nemo/customer-area/more-information/predecessor-models/a6/pdf/a6avc4/1995_06_a6av_c4_28quattro.pdf). Die Fahrphysik verwendet einen angenäherten Frontantrieb mit einer für das Spiel kräftiger abgestimmten V6-Kennlinie. Fahrzeug, Stadt und Audio verwenden eigene prozedurale Assets.
+
+Für Scheinwerferwaschdüsen, Zusatzinstrumente und Mittelkonsole diente ein [A6 Avant von 1996](https://bringatrailer.com/listing/1996-audi-a6-3/) als Referenz. Das Holzdekor orientiert sich an der dokumentierten Ausstattung eines [späten C4 Avant](https://carsandbids.com/auctions/9lRbeyjE/1998-audi-a6-avant-28-quattro).
 
 WebGL und das Zweiachsmodell bleiben erhalten. Die vorhandenen Mesh-Gruppen und Oberflächenhöhen ermöglichen die für diese Version benötigten Reflexionen, Radkontakte und Kollisionen im statischen Build. Ein glTF-Workflow mit vollständigen PBR-Texturen und eine 3D-Starrkörpersimulation sind mögliche nächste Architekturentscheidungen, sobald passende Assets und Gelände vorhanden sind.
 
