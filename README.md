@@ -19,9 +19,11 @@ Browser-Fahrsimulation mit einem schwarzmetallic lackierten, eigens modellierten
 | Bahnhofsrunde | T | Zeitfahrt im Fahrtmenü |
 | Ton und Grafik | Fahrtmenü oben rechts | Fahrtmenü oben rechts |
 
-Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die freie Kamera lässt sich um das Auto drehen, neigen und zoomen. Im Pausenmenü lassen sich Tageszeit, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
+Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die freie Kamera lässt sich um das Auto drehen, neigen und zoomen. Die Cockpitkamera zeigt ein lenkbares Lenkrad und Instrumente für Geschwindigkeit und Drehzahl. Im Pausenmenü lassen sich Tageszeit, Fahrbahnzustand, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
 
-Aufprall und Streifkontakt erzeugen lokale Schäden. Je nach Aufprallstelle können Leuchten schwächer werden, die Motorleistung sinken oder die Lenkung zur Seite ziehen. Reset repariert das Fahrzeug und stellt es an den Start.
+Auf nasser Fahrbahn stehen weniger Reifenkräfte zur Verfügung. Bremswege verlängern sich und die Räder werfen Sprühnebel auf. Das Quality-Profil zeichnet für nasse Straßen eine niedrig aufgelöste Spiegelansicht. Balanced und Performance nutzen eine günstigere Umgebungsreflexion.
+
+Aufprall und Streifkontakt erzeugen lokale Schäden. Je nach Aufprallstelle können Leuchten Sprünge zeigen und schwächer werden, die Motorleistung sinken oder die Lenkung zur Seite ziehen. Nach einem schweren Frontaufprall tritt Dampf aus. Reset repariert das Fahrzeug und stellt es an den Start.
 
 Für die Bahnhofsrunde vom Startplatz aus durch das erste Tor fahren und den goldenen Markierungen folgen. Die Uhr startet beim Überqueren der ersten Markierung und die Minikarte zeigt das nächste Tor. Die Bestzeit wird im Browser gespeichert.
 

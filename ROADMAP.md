@@ -1,5 +1,11 @@
 # Entwicklungsstand und offene Arbeiten
 
+## Version 0.7
+
+Cockpit mit bewegtem Lenkrad, Tacho und Drehzahlmesser, nasse Straßen mit Spiegelung und angepasstem Grip sowie animierte Fußgänger an Bahnhof, Markt und Park. Glattere Spiegelgehäuse und Baumkronen, Fahrräder vor dem Bahnhof und stärkere Reflexionsdetails ergänzen die vorhandenen Modelle.
+
+Sprühnebel, Staub, Abgasfahnen und Dampf nach Frontschaden teilen sich ein begrenztes Partikelbudget. Risse in stark beschädigten Leuchten und ein nasses Abrollgeräusch ergänzen das Feedback. Die Spiegelansicht im Quality-Profil nutzt einen kleineren Renderpuffer und wird über mehrere Frames verteilt aktualisiert.
+
 ## Version 0.6
 
 Die freie Kamera lässt sich mit Touch-Gesten oder Maus einstellen. Ein Reset im Fahrtmenü repariert das Fahrzeug und setzt es zurück. Aufprall und Streifkontakt verformen betroffene Karosseriebereiche und verschlechtern je nach Schaden Licht, Antrieb oder Spur. Funken, Staub und mehrschichtiger Aufprallton begleiten sichtbare Schäden.
@@ -17,6 +23,6 @@ Die 60-Hz-Fahrphysik liest die Straßenhöhe an vier Radpositionen. Bordsteine, 
 ## Nächste Ausbauschritte
 
 - Auf einem Galaxy S24+ über längere Fahrten Frametimes und Thermik messen und Grafikstufen damit einstellen.
-- Ein detailliertes Interieur für eine Cockpitperspektive erstellen und weitere Aktivitäten für Parken und Erkundung erproben.
+- Das Cockpit mit Referenzen für Materialien und Instrumente verfeinern und weitere Aktivitäten für Parken und Erkundung erproben.
 - Weitere städtebauliche Varianten, Geländeprofile und Fernsicht ergänzen.
 - Eine Pipeline für glTF und lizenzierte PBR-Texturen mit dem vorhandenen Renderer vergleichen. Eine Starrkörper-Engine anhand geneigter Straßen und beweglicher Hindernisse bewerten.
