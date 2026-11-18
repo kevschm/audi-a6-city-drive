@@ -1,5 +1,11 @@
 # Entwicklungsstand und offene Arbeiten
 
+## Version 0.6
+
+Die freie Kamera lässt sich mit Touch-Gesten oder Maus einstellen. Ein Reset im Fahrtmenü repariert das Fahrzeug und setzt es zurück. Aufprall und Streifkontakt verformen betroffene Karosseriebereiche und verschlechtern je nach Schaden Licht, Antrieb oder Spur. Funken, Staub und mehrschichtiger Aufprallton begleiten sichtbare Schäden.
+
+Die V6-Kennlinie, Übersetzung und Schaltphasen reagieren kräftiger. Scheinwerfer und nahe Straßenlaternen beleuchten die Szene mit eigener Reichweite und gerichtetem Licht. Der synthetische Ton unterscheidet Motorlast, Ansaugung, Schaltwechsel, Reifen und Streifgeräusche.
+
 ## Version 0.5
 
 Die Spielversion hat Tag- und Abendlicht, Scheinwerferprojektion, verbesserte Lack-, Chrom- und Glasreflexionen sowie drei Grafikprofile. Quality bietet dynamische Fahrzeugschatten und Kantenglättung. Das überarbeitete Avant-Modell hat geglättete Karosserieflächen, überarbeitete Felgen, modellierte Leuchten und getrennt animierte Blinker.
