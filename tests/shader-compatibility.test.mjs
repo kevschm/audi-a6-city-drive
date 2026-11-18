@@ -6,7 +6,7 @@ test('view-space camera uniform exists only in the vertex shader', () => {
   // Some mobile WebGL drivers fail linking when uEye is declared as a
   // uniform in both shader stages with different inferred precision.
   assert.match(meshVertex, /uniform\s+vec3\s+uEye\s*;/);
-  assert.doesNotMatch(meshFragment, /uniform\s+\\w+\s+uEye\s*;/);
+  assert.doesNotMatch(meshFragment, /uniform\s+\w+\s+uEye\s*;/);
   assert.match(meshVertex, /vEyeDelta\s*=\s*uEye\s*-\s*world\.xyz\s*;/);
   assert.match(meshFragment, /vec3\s+delta\s*=\s*vEyeDelta\s*;/);
 });
