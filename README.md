@@ -1,61 +1,59 @@
-# Audi A6 C4 Avant – City Drive
+# Audi A6 C4 Avant · City Drive
 
-Privates Entwicklungsprojekt einer 3D-Fahrsimulation mit einem schwarzen Audi A6 C4 Avant und einer europäischen Stadt. **Prototyp**, keine Verbindung oder offizielle Zusammenarbeit mit Audi AG oder Rockstar Games.
+Browser-Fahrsimulation mit einem schwarzmetallic lackierten, eigens modellierten Audi A6 C4 Avant und einem frei befahrbaren europäischen Stadtviertel. Das Spiel ist ein unabhängiges Projekt.
 
-## Stand
-
-Version 0.3 (technische Grundlage). Aktueller Renderer: eigenes WebGL 1.0, keine externen Laufzeitbibliotheken. Die ursprüngliche Darstellung und Fahrzeugphysik werden vorerst erhalten; ein fester Simulationstakt und eine modulare Dateistruktur wurden ergänzt.
-
-## Lokal starten
-
-Das Spiel nutzt JavaScript-Module und muss daher über einen lokalen HTTP-Server oder eine veröffentlichte HTTPS-Seite gestartet werden. Ein direkter `file://`-Aufruf ist nicht zuverlässig.
-
-```bash
-python -m http.server 8000
-```
-
-Dann `http://localhost:8000/` öffnen. Alternativ einen beliebigen statischen Webserver nutzen.
+**Spiel starten:** [Audi A6 City Drive](https://audi-a6-city-drive.schmidtkevinprivat.workers.dev/)
 
 ## Steuerung
 
-- **Smartphone:** eingeblendete Tasten für Gas, Bremse, Lenkung und Handbremse.
-- **PC:** WASD / Pfeiltasten, Leertaste für Handbremse, V für Kamera, R für Reset, P für Pause.
+| Aktion | Tastatur | Touch |
+| --- | --- | --- |
+| Gas, Lenkung, Bremse | WASD oder Pfeiltasten | Lenktasten links, Pedale rechts |
+| Rückwärtsfahren | Im Stand S oder ↓ drücken | Im Stand erneut Bremse antippen |
+| Handbremse | Leertaste | Handbr. |
+| Kamera | V | Kamerataste |
+| Pause | P oder Escape | Pause |
+| Neustart | R | Im Pausenmenü |
+| Ton und Grafik | Fahrtmenü oben rechts | Fahrtmenü oben rechts |
 
-## Tests
+In Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die Motorhaubenansicht blickt nach vorn über das Fahrzeug. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten.
 
-Node.js >=20 benötigt, keine Pakete zu installieren:
+## Lokal entwickeln
 
-```bash
+Node.js 20 oder neuer genügt für Build, Server und Modultests. Es gibt keine externen Laufzeitpakete.
+
+```sh
+npm start
 npm run verify
 ```
 
-## Ohne Download im Browser ausprobieren (GitHub Codespaces)
+Der Spielserver ist unter `http://localhost:8000/` erreichbar. Der Build legt die statischen Dateien in `dist/` ab. Um genau diese Dateien lokal zu testen, kann der Node-Server aus diesem Verzeichnis gestartet werden.
 
-Das Projekt startet im Codespace automatisch einen Node-Webserver auf Port 8000 und versucht, die Spielvorschau im Browser zu öffnen.
+```sh
+npm run build
+cd dist
+node ../scripts/serve.mjs
+```
 
-**[Codespaces für Audi A6 City Drive öffnen](https://codespaces.new/kevschm/audi-a6-city-drive?quickstart=1)**
+Der Browser-Smoke-Test benötigt Node.js 22 oder neuer und Chromium. Unter Windows verwendet er standardmäßig Edge. Mit `BROWSER_BIN` kann der Browserpfad und mit `BROWSER_ANGLE=d3d11` auf Windows der Grafikpfad für eine separate Hardwareprüfung gesetzt werden. Der Standard verwendet SwiftShader. Der Test bedient die gebaute Seite mit Tastatur und emuliertem Mehrfingertouch.
 
-GitHub-Anmeldung und gegebenenfalls Erstellung eines Codespace können erforderlich sein. Im Browser kann eine Bestätigung zur Vorschau erscheinen. Ein Codespace ist eine temporäre Entwicklungsumgebung und **keine dauerhafte öffentliche Website**; die laufende Umgebung verbraucht Codespaces-Ressourcen und kann nach Freikontingent Kosten verursachen.
+```sh
+npm run test:browser
+```
+
+## Architektur
+
+- `src/render/` enthält den WebGL-Renderer, prozedurale Oberflächen, die Fahrzeuggeometrie und die Grafikstufen. Sektorgrenzen reduzieren die sichtbare Stadtgeometrie. Auto und Hoch nutzen hardwareabhängig eine Schattenkarte. Eco reduziert Auflösung und Sichtweite und verwendet Kontaktschatten.
+- `src/world/` erzeugt Stadt, Straßen, Ampeln, Parkbuchten, statische Kollisionen und KI-Verkehr aus lokalem Quellcode.
+- `src/simulation/` berechnet die Fahrt mit 60 Hz. Das planare Zweiachsmodell nutzt einen frontlastigen Schwerpunkt, eine V6-Drehmomentkurve, ein Automatikgetriebe, unterschiedlich griffige Oberflächen und Dämpfung für Hub-, Roll- und Nickbewegung.
+- `src/ui/` enthält Kamera, Minikarte und synthetischen Web-Audio-Ton.
+
+Das Avant-Modell entstand anhand der Proportionen des [Audi-Datenblatts zum A6 Avant C4](https://www.audi.de/content/dam/nemo/customer-area/more-information/predecessor-models/a6/pdf/a6avc4/1995_06_a6av_c4_28quattro.pdf). Die Fahrphysik verwendet einen angenäherten Frontantrieb. Fahrzeug, Stadt und Audio verwenden eigene prozedurale Assets.
+
+Für diese Version bleibt WebGL erhalten. Der Renderer setzt auf vorhandener gebündelter Geometrie auf und liefert denselben statischen HTTP-Einstieg auf Windows und Mobilgeräten. Three.js kann bei einem späteren Wechsel zu glTF und einem PBR-Asset-Workflow den Szenengraph und die Materialpflege vereinfachen. Rapier bietet einen Raycast-Fahrzeugcontroller für einzelne Radkontakte und 3D-Starrkörper; die derzeitige ebene Stadt nutzt den vorhandenen Simulations- und Kollisionsansatz weiter.
 
 ## Veröffentlichung
 
-Die Veröffentlichung erfolgt über **Cloudflare Pages** mit GitHub-Anbindung. Das Repository darf privat bleiben; die bereitgestellte Spielwebsite ist standardmäßig **öffentlich erreichbar**. Die produktive URL ist noch nicht eingerichtet oder verifiziert.
+Der vorhandene Cloudflare Worker `audi-a6-city-drive` liefert statische Dateien aus. In `wrangler.jsonc` zeigt `assets.directory` auf `./dist`. Die Produktionskonfiguration verwendet `main`, `npm run build` und `npx wrangler deploy`.
 
-Einmalig im Cloudflare-Dashboard ein Pages-Projekt über **Workers & Pages → Create application → Pages → Connect to Git** anlegen und das private Repository `kevschm/audi-a6-city-drive` autorisieren. Als Produktionszweig `main` festlegen.
-
-| Cloudflare-Einstellung | Wert |
-| --- | --- |
-| Project name | `audi-a6-city-drive` (falls verfügbar) |
-| Framework preset | `None` |
-| Production branch | `main` |
-| Root directory | `/` (Repository-Wurzel) |
-| Build command | `npm run build` |
-| Build output directory | `dist` |
-
-Der Build kopiert **nur die zur Ausführung benötigten Spiel-Dateien** in `dist/`. Entwicklungsdateien und Tests werden nicht bereitgestellt. Nach jeder Änderung an `main` kann Cloudflare automatisch neu veröffentlichen. Die URL wird erst nach erfolgreicher Bereitstellung angezeigt.
-
-**Hinweis:** Auch bei privatem Repository können Besucher einer öffentlichen Browser-Spielseite das ausgelieferte HTML, CSS und JavaScript sehen. Für eine ausschließlich private Spielseite wäre zusätzlich eine Zugriffskontrolle erforderlich.
-
-## Entwicklung
-
-Die priorisierte technische Bestandsaufnahme und weitere Planung stehen in [ROADMAP.md](ROADMAP.md).
+Für einen direkten Upload dieselben gebauten Dateien aus `dist/` im bestehenden Worker auswählen. Die Struktur um `index.html` und `src/` ist Teil des Builds. Anschließend die Spieladresse, die JavaScript-Module und die Fahrt im Browser prüfen.
