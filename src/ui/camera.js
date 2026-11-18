@@ -1,6 +1,7 @@
 import { clamp, lerp, mixAngle } from '../render/math.js';
 
-export const cameraNames = ['Verfolger', 'Schrägansicht', 'Motorhaube', 'Frontansicht'];
+export const cameraNames = ['Verfolger', 'Schrägansicht', 'Motorhaube', 'Frontansicht', 'Frei'];
+export const ORBIT_MODE = cameraNames.length - 1;
 
 function cameraClearance(x, z, dx, dz, obstacles) {
   let nearest = 1;
@@ -20,7 +21,20 @@ function cameraClearance(x, z, dx, dz, obstacles) {
 export function createCamera() {
   let heading, clearance, speed, height, fieldOfView;
 
-  function update(car, mode, dt, obstacles) {
+  function update(car, mode, dt, obstacles, orbit) {
+    if (mode === ORBIT_MODE) {
+      const angle = car.heading + orbit.azimuth;
+      const flatDistance = orbit.distance * Math.cos(orbit.elevation);
+      const dx = -Math.sin(angle) * flatDistance, dz = -Math.cos(angle) * flatDistance;
+      const rise = Math.sin(orbit.elevation) * orbit.distance;
+      const maxDistance = cameraClearance(car.x, car.z, dx, dz, obstacles);
+      clearance = clearance === undefined ? maxDistance : Math.min(maxDistance, lerp(clearance, maxDistance, 1 - Math.exp(-dt * 7)));
+      const target = [car.x, 0.85 + car.heave, car.z];
+      return {
+        eye: [car.x + dx * clearance, target[1] + Math.max(0.36, rise * clearance), car.z + dz * clearance],
+        target, fov: 51 * Math.PI / 180,
+      };
+    }
     const hood = mode === 2;
     speed = speed === undefined ? Math.abs(car.speed) : lerp(speed, Math.abs(car.speed), 1 - Math.exp(-dt * 3.8));
     heading = heading === undefined || hood ? car.heading : mixAngle(heading, car.heading, 1 - Math.exp(-dt * (5 + speed * 0.09)));

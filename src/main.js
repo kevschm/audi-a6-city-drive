@@ -1,15 +1,18 @@
 import { createAdaptiveResolution } from './performance/adaptive-resolution.js';
 import { createFixedStepClock } from './simulation/fixed-step.js';
 import { createVehicleState, stepVehicle, vehicleOverlapsTraffic } from './simulation/vehicle.js';
+import { damageAreas } from './simulation/vehicle-damage.js';
 import { createTimeTrial, formatTrialTime } from './simulation/time-trial.js';
 import { buildCity, districtAt, groundHeightAt, halfWorld, roads, roadHalfWidth, roadSurfaceAt, startPosition } from './world/city.js';
 import { makeTraffic } from './world/traffic.js';
 import { clamp, lerp, mixAngle } from './render/math.js';
 import { Mesh } from './render/mesh.js';
-import { createRenderer, GRAPHICS } from './render/renderer.js?webgl-android-fix-20261118-050';
+import { createRenderer, GRAPHICS } from './render/renderer.js?drive-060';
+import { createImpactEffects } from './render/impact-effects.js';
 import { buildVehicles } from './render/vehicles.js';
 import { createMinimap } from './ui/minimap.js';
-import { cameraNames, createCamera } from './ui/camera.js';
+import { cameraNames, createCamera, ORBIT_MODE } from './ui/camera.js';
+import { createOrbitPose, installOrbitGestures } from './ui/orbit.js';
 import { createDriveAudio } from './ui/audio.js';
 
 const $ = id => document.getElementById(id);
@@ -18,6 +21,7 @@ const buttons = {
   pause: $('pauseBtn'), resume: $('resumeBtn'), reset: $('resetBtn'),
   trial: $('trialBtn'), headlights: $('lightBtn'), dusk: $('duskBtn'),
   leftSignal: $('leftSignal'), rightSignal: $('rightSignal'),
+  quickReset: $('driveReset'),
 };
 const keyActions = {
   w: 'throttle', arrowup: 'throttle', s: 'brake', arrowdown: 'brake',
@@ -51,7 +55,7 @@ function boot() {
   const canvas = $('view');
   const renderer = createRenderer(canvas);
   const city = buildCity({ Mesh });
-  const { cityChunks, landscape, obstacles, signals } = city;
+  const { cityChunks, landscape, obstacles, signals, streetLights } = city;
   renderer.upload(landscape);
   for (const chunk of cityChunks) renderer.upload(chunk.mesh);
   const vehicles = buildVehicles(renderer);
@@ -59,6 +63,8 @@ function boot() {
   const world = { roads, obstacles, roadSurfaceAt, groundHeightAt, traffic: traffic.actors, bounds: halfWorld };
   const drawMap = createMinimap($('minimap'), city, roads, roadHalfWidth, halfWorld);
   const camera = createCamera(), clock = createFixedStepClock(), audio = createDriveAudio();
+  const orbit = createOrbitPose(), effects = createImpactEffects();
+  const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
   const touch = matchMedia('(pointer: coarse)').matches;
   const adaptive = createAdaptiveResolution({
     minScale: touch ? 0.56 : 0.68, maxScale: touch ? 1.28 : 1.52, targetFps: touch ? 36 : 55,
@@ -84,6 +90,12 @@ function boot() {
   let headlights = duskTarget > 0, signal = 0, signalTime = 0;
   let baseInput = { ...input };
   let gamepadsAvailable = typeof navigator.getGamepads === 'function';
+  let impactShake = 0;
+  const clearOrbit = installOrbitGestures(canvas, orbit, () => {
+    if (!started || paused || failed) return false;
+    if (cameraMode !== ORBIT_MODE) selectCamera(ORBIT_MODE, false);
+    return true;
+  });
 
   function notify(text) {
     $('toast').textContent = text;
@@ -129,26 +141,35 @@ function boot() {
   function clearInput() {
     keys.clear();
     pointers.clear();
+    clearOrbit();
     updateInput();
   }
 
   function draw(dt, interpolation = 1) {
+    visible.damage = car.damage;
     for (const field of ['brakeLights', 'reverseLights']) visible[field] = car[field];
     for (const field of visualFields) visible[field] = lerp(previous[field], car[field], interpolation);
     visible.heading = mixAngle(previous.heading, car.heading, interpolation);
     for (const field of wheelFields) for (let i = 0; i < 4; i++) visible[field][i] = lerp(previous[field][i], car[field][i], interpolation);
     dusk = lerp(dusk, duskTarget, 1 - Math.exp(-dt * 2.8));
     if (Math.abs(dusk - duskTarget) < 0.004) dusk = duskTarget;
-    const view = camera.update(visible, cameraMode, dt, obstacles);
+    const view = camera.update(visible, cameraMode, dt, obstacles, orbit);
+    if (motion && impactShake > 0.004) {
+      view.eye[1] += Math.sin(signalTime * 37) * impactShake * 0.084;
+      view.target[1] -= Math.sin(signalTime * 43) * impactShake * 0.089;
+    }
     const device = window.devicePixelRatio || 1;
     const quality = qualityModes[qualityIndex];
     const scale = Math.min(device, adaptive.scale);
     const blink = signalTime % 0.72 < 0.39 ? signal : 0;
+    const street = dusk > 0.04 ? streetLights.slice().sort((a, b) =>
+      (a[0] - visible.x) ** 2 + (a[2] - visible.z) ** 2 - ((b[0] - visible.x) ** 2 + (b[2] - visible.z) ** 2)).slice(0, 4) : [];
     const scene = vehicles.scene(visible, traffic.actors, signals, traffic.signalColor, {
-      showBody: true, far: GRAPHICS[quality].trafficDistance, headlights, blink, dusk, gate: trial.gate,
+      showBody: true, far: GRAPHICS[quality].trafficDistance, headlights, blink, dusk, gate: trial.gate, street,
     });
     renderer.render({ ...view, scale, quality, chunks: cityChunks, landscape, ...scene,
-      dusk, headlights, heading: visible.heading, focus: [visible.x, visible.heave, visible.z] });
+      dusk, headlights, heading: visible.heading, focus: [visible.x, visible.heave, visible.z],
+      beamStrength: 1 - car.damage[0] * 0.86, street, effects: effects.view() });
   }
 
   function updateHud() {
@@ -157,6 +178,11 @@ function boot() {
     $('rpm').textContent = rpmFormat.format(car.rpm);
     $('rpmb').style.width = `${Math.min(100, car.rpm / 64)}%`;
     $('dist').textContent = distanceFormat.format(car.km) + ' km';
+    const damage = Math.max(...car.damage);
+    $('condition').textContent = damage < 0.035 ? 'Intakt' : damage < 0.23 ? 'Spuren' : damage < 0.65 ? 'Beschädigt' : 'Stark beschädigt';
+    for (const [index, panel] of [...$('conditionPanels').children].entries()) {
+      panel.dataset.level = car.damage[index] < 0.035 ? 'intact' : car.damage[index] < 0.32 ? 'scuffed' : 'damaged';
+    }
     $('place').textContent = districtAt(car.x, car.z) + ' · ' + surfaces[car.surface];
     $('leftSignal').classList.toggle('lit', signal < 0 && signalTime % 0.72 < 0.39);
     $('rightSignal').classList.toggle('lit', signal > 0 && signalTime % 0.72 < 0.39);
@@ -175,6 +201,8 @@ function boot() {
     rememberPose();
     traffic.step(dt, car, vehicleOverlapsTraffic, roadHalfWidth);
     stepVehicle(car, input, dt, world);
+    effects.step(dt);
+    impactShake *= Math.exp(-dt * 8.2);
     signalTime += dt;
     const result = trial.step(dt, previous, car);
     if (result && audioEnabled) audio.chime(result === 'finish');
@@ -182,9 +210,11 @@ function boot() {
       if (trial.record) storage.write('station-best', trial.best);
       updateTrialButton();
     }
-    if (car.collisionImpact > 1.6 && time - collisionAt > 540) {
-      notify('Kollision');
-      if (audioEnabled) audio.impact(car.collisionImpact);
+    if (car.impact && time - collisionAt > 260) {
+      effects.emit(car.impact);
+      impactShake = Math.min(2.4, car.impact.closingSpeed / 8);
+      if (car.impact.change > 0.09) notify('Aufprall · ' + damageAreas[car.impact.area]);
+      if (audioEnabled) audio.impact(car.impact);
       collisionAt = time;
     }
   }
@@ -258,6 +288,8 @@ function boot() {
     Object.assign(car, createVehicleState(), startPosition);
     rememberPose();
     collisionAt = -Infinity;
+    impactShake = 0;
+    effects.clear();
     camera.reset();
     clock.reset();
     clearInput();
@@ -299,10 +331,14 @@ function boot() {
 
   function switchCamera() {
     if (!started || paused || failed) return;
-    cameraMode = (cameraMode + 1) % cameraNames.length;
+    selectCamera((cameraMode + 1) % cameraNames.length);
+  }
+
+  function selectCamera(mode, announce = true) {
+    cameraMode = mode;
     camera.reset();
     buttons.camera.querySelector('span').textContent = cameraNames[cameraMode];
-    notify(cameraNames[cameraMode]);
+    if (announce) notify(cameraMode === ORBIT_MODE ? 'Ziehen zum Drehen · Pinch oder Mausrad zum Zoomen' : cameraNames[cameraMode]);
   }
 
   function switchQuality() {
@@ -348,6 +384,7 @@ function boot() {
   buttons.pause.addEventListener('click', () => setPaused(true));
   buttons.resume.addEventListener('click', () => setPaused(false));
   buttons.reset.addEventListener('click', () => { resetDrive(); setPaused(false); });
+  buttons.quickReset.addEventListener('click', () => { if (started && !paused && !failed) resetDrive(); });
   buttons.headlights.addEventListener('click', () => setHeadlights(!headlights));
   buttons.trial.addEventListener('click', switchTrial);
   buttons.dusk.addEventListener('click', switchDusk);

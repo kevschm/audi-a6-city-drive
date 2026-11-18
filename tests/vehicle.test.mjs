@@ -33,7 +33,7 @@ test('full throttle reaches 100 km/h with automatic shifts and plausible timing'
       break;
     }
   }
-  assert.ok(elapsed >= 8 && elapsed <= 12, `0–100 time: ${elapsed} s`);
+  assert.ok(elapsed >= 7.35 && elapsed <= 8.65, `0–100 time: ${elapsed} s`);
   assert.deepEqual([...gears], ['D1', 'D2', 'D3']);
   assert.ok(car.pitch < 0 && car.spin > 0 && car.km > 0);
 });

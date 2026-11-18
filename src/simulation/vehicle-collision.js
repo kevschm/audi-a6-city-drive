@@ -1,3 +1,5 @@
+import { applyImpact } from './vehicle-damage.js';
+
 // The collision envelope includes the bumpers and tires. Mirrors are cosmetic.
 const PLAYER_HALF_WIDTH = 0.89;
 const PLAYER_HALF_LENGTH = 2.40;
@@ -69,13 +71,16 @@ function contactAt(x, z, heading, { obstacles = [], traffic = [], bounds = 238 }
     const halfWidth = (obstacle.x1 - obstacle.x0) * 0.5;
     const halfLength = (obstacle.z1 - obstacle.z0) * 0.5;
     const hit = overlap(body, rectangle(centerX, centerZ, 0, halfWidth, halfLength));
-    if (hit) return hit;
+    if (hit) return { ...hit, targetX: Math.max(obstacle.x0, Math.min(obstacle.x1, x)), targetZ: Math.max(obstacle.z0, Math.min(obstacle.z1, z)) };
   }
   for (const actor of traffic) {
     // Avoid trigonometry for lanes far from the player.
     if (Math.abs(actor.x - x) > 5 || Math.abs(actor.z - z) > 5) continue;
     const hit = overlap(body, trafficRectangle(actor));
-    if (hit) return hit;
+    if (hit) {
+      const speed = actor.speed || 0, angle = actor.heading || 0;
+      return { ...hit, targetX: actor.x, targetZ: actor.z, vx: speed * Math.sin(angle), vz: speed * Math.cos(angle) };
+    }
   }
   return null;
 }
@@ -117,11 +122,24 @@ export function moveVehicle(vehicle, dt, world) {
         allowed = middle;
       }
     }
-    const approach = Math.min(0, vehicle.vx * hit.nx + vehicle.vz * hit.nz);
-    vehicle.collisionImpact = Math.max(-approach, Math.abs(vehicle.yaw) * 0.6);
-    vehicle.vx = (vehicle.vx - approach * hit.nx) * 0.84 - approach * hit.nx * 0.08;
-    vehicle.vz = (vehicle.vz - approach * hit.nz) * 0.84 - approach * hit.nz * 0.08;
-    vehicle.yaw *= 0.32;
+    const approach = Math.min(0, (vehicle.vx - (hit.vx || 0)) * hit.nx + (vehicle.vz - (hit.vz || 0)) * hit.nz);
+    const tangent = vehicle.vz * hit.nx - vehicle.vx * hit.nz;
+    const closing = -approach;
+    const rub = Math.min(Math.abs(tangent), closing * 0.23);
+    const friction = Math.sign(tangent) * rub;
+    const rebound = closing * (closing < 4 ? 0.09 : 0.055);
+    vehicle.collisionImpact = Math.max(closing, Math.abs(vehicle.yaw) * 0.6);
+    vehicle.vx += (closing + rebound) * hit.nx + friction * hit.nz;
+    vehicle.vz += (closing + rebound) * hit.nz - friction * hit.nx;
+    const reach = PLAYER_HALF_LENGTH * Math.abs(hit.nx * Math.sin(heading) + hit.nz * Math.cos(heading)) +
+      PLAYER_HALF_WIDTH * Math.abs(hit.nx * Math.cos(heading) - hit.nz * Math.sin(heading));
+    const atX = x + dx * allowed - hit.nx * reach;
+    const atZ = z + dz * allowed - hit.nz * reach;
+    const lever = (hit.targetX ?? atX) - atX;
+    const leverZ = (hit.targetZ ?? atZ) - atZ;
+    const angularKick = Math.max(-0.63, Math.min(0.63, (leverZ * hit.nx - lever * hit.nz) * closing * 0.045));
+    vehicle.yaw = vehicle.yaw * 0.44 + angularKick;
+    applyImpact(vehicle, closing, Math.abs(tangent), hit.nx, hit.nz, atX, atZ);
     break;
   }
 

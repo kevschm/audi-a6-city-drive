@@ -344,6 +344,7 @@ function streetLamp(mesh, obstacles, x, z, height, direction = 1) {
   mesh.box(armX - .32, height + .06, z - .14, armX + .32, height + .23, z + .14, '#5e6461');
   mesh.box(armX - .25, height + .035, z - .104, armX + .25, height + .09, z + .104, '#e5dbc1');
   footprint(obstacles, x - .2, z - .2, x + .2, z + .2, 'street-furniture');
+  return [armX, height + .029, z];
 }
 
 function trafficSignal(mesh, obstacles, signals, intersectionX, intersectionZ, axis, direction) {
@@ -666,6 +667,26 @@ function neighborhood(mesh, obstacles, random, ix, iz, x, z, kind) {
   if (kind === 'mixed') bench(mesh, obstacles, x + 18, z - 18);
 }
 
+function roadEndBarrier(mesh, obstacles, axis, center, width, end) {
+  const inner = end * (EDGE - 0.36), outer = end * EDGE;
+  const z0 = Math.min(inner, outer), z1 = Math.max(inner, outer);
+  const x0 = center - width, x1 = center + width;
+  const box = (a, y0, b, c, y1, d, fill) => {
+    if (axis === 0) mesh.box(a, y0, b, c, y1, d, fill);
+    else mesh.box(b, y0, a, d, y1, c, fill);
+  };
+  box(x0, 0.006, z0, x1, 0.77, z1, '#8d8981');
+  box(x0, 0.70, z0 - 0.022, x1, 0.86, z1 + 0.022, '#d6ccbb');
+  const stripeLow = Math.min(inner, inner - end * 0.02);
+  const stripeHigh = Math.max(inner, inner - end * 0.02);
+  for (let x = x0; x < x1 - 0.12; x += 0.71) {
+    box(x + 0.035, 0.48, stripeLow, Math.min(x1, x + 0.37), 0.685, stripeHigh, '#b54e37');
+    box(x + 0.37, 0.48, stripeLow, Math.min(x1, x + 0.70), 0.685, stripeHigh, '#ded1ac');
+  }
+  if (axis === 0) footprint(obstacles, x0, z0, x1, z1, 'road-end');
+  else footprint(obstacles, z0, x0, z1, x1, 'road-end');
+}
+
 function roadSegment(mesh, axis, center, width, start, end) {
   const patch = (u0, v0, u1, v1, y, hex, material) => {
     if (axis === 0) ground(mesh, u0, v0, u1, v1, y, hex, material);
@@ -750,6 +771,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
   const obstacles = [];
   const districts = [];
   const signals = [];
+  const streetLights = [];
 
   function meshAt(x, z, reach) {
     const key = `${Math.floor((x + EDGE) / 100)},${Math.floor((z + EDGE) / 100)}`;
@@ -778,6 +800,10 @@ export function buildCity({ Mesh, seed = 364844 }) {
 
   for (let i = 0; i < roads.length; i++) {
     const center = roads[i];
+    for (const end of [-1, 1]) {
+      roadEndBarrier(meshAt(center, end * EDGE, widths[i] + 1), obstacles, 0, center, widths[i], end);
+      roadEndBarrier(meshAt(end * EDGE, center, widths[i] + 1), obstacles, 1, center, widths[i], end);
+    }
     for (let j = 0; j <= roads.length; j++) {
       const start = j ? roads[j - 1] + widths[j - 1] : -EDGE;
       const end = j < roads.length ? roads[j] - widths[j] : EDGE;
@@ -794,7 +820,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
       if (lights || (i > 0 && j > 0 && i < 6 && j < 6 && (i + j) % 2 === 0)) {
         crosswalk(mesh, center, z, widths[i], widths[j], lights);
       }
-      if (i < 6 && j < 6) streetLamp(mesh, obstacles, center + widths[i] + 1.65, z + widths[j] + 7.3, 5.75, -1);
+      if (i < 6 && j < 6) streetLights.push(streetLamp(mesh, obstacles, center + widths[i] + 1.65, z + widths[j] + 7.3, 5.75, -1));
       if (!lights) continue;
       for (const axis of [0, 1]) for (const direction of [-1, 1]) {
         trafficSignal(mesh, obstacles, signals, center, z, axis, direction);
@@ -817,5 +843,5 @@ export function buildCity({ Mesh, seed = 364844 }) {
     else neighborhood(mesh, obstacles, random, ix, iz, x, z, kind);
   }
 
-  return { landscape, cityChunks: [...chunks.values()], obstacles, districts, signals };
+  return { landscape, cityChunks: [...chunks.values()], obstacles, districts, signals, streetLights };
 }

@@ -11,15 +11,17 @@ Browser-Fahrsimulation mit einem schwarzmetallic lackierten, eigens modellierten
 | Gas, Lenkung, Bremse | WASD oder Pfeiltasten | Lenktasten links, Pedale rechts |
 | Rückwärtsfahren | Im Stand S oder ↓ drücken | Im Stand erneut Bremse antippen |
 | Handbremse | Leertaste | Handbr. |
-| Kamera | V | Kamerataste |
+| Kamera | V oder mit der Maus ziehen und scrollen | Kamerataste oder auf der Szene ziehen und mit zwei Fingern zoomen |
 | Pause | P oder Escape | Pause |
-| Neustart | R | Im Pausenmenü |
+| Neustart und Reparatur | R | Reset im Fahrtmenü |
 | Scheinwerfer | L | Licht im Fahrtmenü |
 | Blinker | Q / E | Pfeile neben dem Tacho |
 | Bahnhofsrunde | T | Zeitfahrt im Fahrtmenü |
 | Ton und Grafik | Fahrtmenü oben rechts | Fahrtmenü oben rechts |
 
-Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Zur Auswahl stehen die Verfolger-, Schräg-, Motorhauben- und Frontansicht. Im Pausenmenü lassen sich Tageszeit, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
+Im Querformat können Gas und Lenkung gleichzeitig gehalten werden. Die freie Kamera lässt sich um das Auto drehen, neigen und zoomen. Im Pausenmenü lassen sich Tageszeit, Lenkeinschlag und Lautstärke einstellen. Der Ton startet über „Motor starten“ und lässt sich im Fahrtmenü stummschalten. Bei Standard-Gamepads lenkt der linke Stick, RT gibt Gas, LT bremst und A zieht die Handbremse.
+
+Aufprall und Streifkontakt erzeugen lokale Schäden. Je nach Aufprallstelle können Leuchten schwächer werden, die Motorleistung sinken oder die Lenkung zur Seite ziehen. Reset repariert das Fahrzeug und stellt es an den Start.
 
 Für die Bahnhofsrunde vom Startplatz aus durch das erste Tor fahren und den goldenen Markierungen folgen. Die Uhr startet beim Überqueren der ersten Markierung und die Minikarte zeigt das nächste Tor. Die Bestzeit wird im Browser gespeichert.
 
@@ -53,7 +55,7 @@ npm run test:browser
 - `src/simulation/` berechnet die Fahrt mit 60 Hz. Das Zweiachsmodell nutzt einen frontlastigen Schwerpunkt, eine V6-Drehmomentkurve und ein Automatikgetriebe. Vier getrennte Radkontakte liefern Höhe, Schlupf und Grip für gemischte Untergründe. Die Zeitfahrt nutzt dieselbe Simulationsuhr.
 - `src/ui/` enthält Kamera, Minikarte und synthetischen Web-Audio-Ton mit Drehzahl und Last sowie belagsabhängigem Abrollgeräusch.
 
-Das Avant-Modell entstand anhand der Proportionen des [Audi-Datenblatts zum A6 Avant C4](https://www.audi.de/content/dam/nemo/customer-area/more-information/predecessor-models/a6/pdf/a6avc4/1995_06_a6av_c4_28quattro.pdf). Die Fahrphysik verwendet einen angenäherten Frontantrieb. Fahrzeug, Stadt und Audio verwenden eigene prozedurale Assets.
+Das Avant-Modell entstand anhand der Proportionen des [Audi-Datenblatts zum A6 Avant C4](https://www.audi.de/content/dam/nemo/customer-area/more-information/predecessor-models/a6/pdf/a6avc4/1995_06_a6av_c4_28quattro.pdf). Die Fahrphysik verwendet einen angenäherten Frontantrieb mit einer für das Spiel kräftiger abgestimmten V6-Kennlinie. Fahrzeug, Stadt und Audio verwenden eigene prozedurale Assets.
 
 WebGL und das Zweiachsmodell bleiben erhalten. Die vorhandenen Mesh-Gruppen und Oberflächenhöhen ermöglichen die für diese Version benötigten Reflexionen, Radkontakte und Kollisionen im statischen Build. Ein glTF-Workflow mit vollständigen PBR-Texturen und eine 3D-Starrkörpersimulation sind mögliche nächste Architekturentscheidungen, sobald passende Assets und Gelände vorhanden sind.
 

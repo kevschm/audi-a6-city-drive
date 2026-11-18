@@ -1,4 +1,5 @@
 import { moveVehicle } from './vehicle-collision.js';
+import { availablePower } from './vehicle-damage.js';
 import { HALF_TRACK, TIRE_RADIUS, WHEELBASE, WHEEL_CONTACTS, stepSuspension, wheelSurfaceAt } from './vehicle-suspension.js';
 export { vehicleOverlapsTraffic } from './vehicle-collision.js';
 
@@ -9,8 +10,8 @@ const FRONT_AXLE = WHEELBASE * (1 - FRONT_WEIGHT_FRACTION);
 const REAR_AXLE = WHEELBASE * FRONT_WEIGHT_FRACTION;
 const YAW_INERTIA = 2650;
 const CG_HEIGHT = 0.54;
-const FINAL_DRIVE = 3.89;
-const RATIOS = [3.67, 2.06, 1.36, 1.03, 0.84];
+const FINAL_DRIVE = 4.03;
+const RATIOS = [3.56, 2.15, 1.43, 1.08, 0.84];
 const REVERSE_RATIO = 3.40;
 const IDLE_RPM = 850;
 const REDLINE = 6400;
@@ -35,6 +36,7 @@ export function createVehicleState() {
     throttle: 0, gearIndex: 0, shiftTimer: 0, rpm: IDLE_RPM, gear: 'N', reverseArmed: true,
     road: true, surface: 'asphalt', brakeLights: false, reverseLights: false,
     collisionImpact: 0, skid: 0, longitudinalAccel: 0, lateralAccel: 0,
+    damage: [0, 0, 0, 0], impact: null,
   };
 }
 
@@ -45,10 +47,10 @@ function updateGearbox(car, speed, throttle, reverse, braking, dt) {
     car.shiftTimer = 0;
   } else if (car.shiftTimer === 0) {
     const rpm = wheelToCrank(speed, RATIOS[car.gearIndex]);
-    const upshiftRpm = mix(3550, 5650, throttle);
+    const upshiftRpm = mix(3500, 6040, throttle);
     if (!braking && car.gearIndex < RATIOS.length - 1 && rpm > upshiftRpm) {
       car.gearIndex++;
-      car.shiftTimer = 0.24;
+      car.shiftTimer = 0.21;
     } else if (car.gearIndex > 0 && rpm < mix(1500, 2250, throttle)) {
       car.gearIndex--;
       car.shiftTimer = 0.17;
@@ -56,17 +58,17 @@ function updateGearbox(car, speed, throttle, reverse, braking, dt) {
   }
   const ratio = reverse ? REVERSE_RATIO : RATIOS[car.gearIndex];
   const coupledRpm = wheelToCrank(speed, ratio);
-  const converterRpm = IDLE_RPM + throttle * 1900 * (1 - clamp(Math.abs(speed) / 10, 0, 1));
+  const converterRpm = IDLE_RPM + throttle * 2190 * (1 - clamp(Math.abs(speed) / 10, 0, 1));
   car.rpm = follow(car.rpm, clamp(Math.max(coupledRpm, converterRpm), IDLE_RPM, REDLINE), 10, dt);
   car.gear = reverse ? 'R' : Math.abs(speed) < 0.08 && throttle === 0 ? 'N' : `D${car.gearIndex + 1}`;
   return ratio;
 }
 
 function engineTorque(rpm) {
-  // Approximate torque curve for a naturally aspirated 1990s V6.
-  if (rpm < 3200) return mix(145, 250, clamp((rpm - IDLE_RPM) / 2350, 0, 1));
-  if (rpm < 5500) return mix(250, 209, (rpm - 3200) / 2300);
-  return mix(209, 0, clamp((rpm - 5500) / (REDLINE - 5500), 0, 1));
+  // A more responsive V6 tune for this game, in N·m.
+  if (rpm < 3450) return mix(176, 285, clamp((rpm - IDLE_RPM) / 2600, 0, 1));
+  if (rpm < 5650) return mix(285, 246, (rpm - 3450) / 2200);
+  return mix(246, 0, clamp((rpm - 5650) / (REDLINE - 5650), 0, 1));
 }
 
 function surfaceAt(car, { roadSurfaceAt, roads = [] }) {
@@ -97,6 +99,7 @@ export function stepVehicle(car, input, dt, world = {}) {
   const lateral = car.vx * cos - car.vz * sin;
   const speed = Math.abs(longitudinal);
   car.collisionImpact = 0;
+  car.impact = null;
   const surfaceName = surfaceAt(car, world);
   car.surface = Object.hasOwn(SURFACES, surfaceName) ? surfaceName : 'asphalt';
   car.road = car.surface === 'asphalt';
@@ -113,7 +116,7 @@ export function stepVehicle(car, input, dt, world = {}) {
   const reverse = reverseDrive || (car.reverseLights && longitudinal < -0.11);
   const serviceBrake = Math.max(reverseDrive ? 0 : requestedBrake, longitudinal < -0.12 ? requestedThrottle : 0);
   const driveCommand = serviceBrake > 0 ? 0 : reverseDrive ? requestedBrake : requestedThrottle;
-  car.throttle = follow(car.throttle, driveCommand, driveCommand > car.throttle ? 6.2 : 12, dt);
+  car.throttle = follow(car.throttle, driveCommand, driveCommand > car.throttle ? 8.8 : 13, dt);
   car.brakeLights = serviceBrake > 0 || handbrake > 0;
   car.reverseLights = reverse;
   const ratio = updateGearbox(car, longitudinal, driveCommand, reverse, car.brakeLights, dt);
@@ -122,7 +125,8 @@ export function stepVehicle(car, input, dt, world = {}) {
   const steerLimit = (0.53 + 0.009 * speed) / (1 + (speed / 10) ** 1.65);
   const centering = steering === 0 || steering * car.steer < 0;
   const steerRate = centering ? 8.1 : mix(6.6, 5.3, clamp(speed / 26, 0, 1));
-  car.steer = follow(car.steer, steering * steerLimit, steerRate, dt);
+  const toe = (car.damage[3] - car.damage[2]) * 0.022 * clamp(speed / 9, 0, 1);
+  car.steer = follow(car.steer, steering * steerLimit + toe, steerRate, dt);
   const steerSin = Math.sin(car.steer), steerCos = Math.cos(car.steer);
 
   const loadTransfer = clamp(MASS * car.longitudinalAccel * CG_HEIGHT / WHEELBASE, -3700, 3700);
@@ -133,10 +137,10 @@ export function stepVehicle(car, input, dt, world = {}) {
   const leftWeight = 0.5 + clamp(car.lateralAccel * CG_HEIGHT / (2 * GRAVITY * HALF_TRACK), -0.32, 0.32);
   const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96;
   const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1);
-  const shiftPower = car.shiftTimer > 0 ? mix(1, 0.23, clamp(car.shiftTimer / 0.20, 0, 1)) : 1;
+  const shiftPower = car.shiftTimer > 0 ? mix(1, 0.36, clamp(car.shiftTimer / 0.18, 0, 1)) : 1;
   const reversePower = reverseDrive ? -0.64 * (1 - clamp(speed / 9, 0, 1) ** 4) : 1;
   const traction = driveCommand > 0 ? car.throttle * reversePower * engineTorque(car.rpm) *
-    ratio * FINAL_DRIVE * 0.87 * shiftPower / TIRE_RADIUS : 0;
+    ratio * FINAL_DRIVE * 0.87 * shiftPower * availablePower(car.damage) / TIRE_RADIUS : 0;
 
   const direction = Math.sign(longitudinal);
   const brakeForce = Math.min(MASS * 11.5 * serviceBrake, MASS * speed / dt);

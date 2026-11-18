@@ -189,6 +189,17 @@ try {
   await click('#resumeBtn');
   await click('#trialBtn');
   assert.equal(await evaluate(`document.getElementById('routePanel').hidden`), true);
+  await click('#audioBtn');
+  await click('#driveReset');
+  await toggleKey('w', true);
+  await waitFor('Visible crash damage', () => evaluate(`document.getElementById('condition').textContent !== 'Intakt'`), 38000);
+  await toggleKey('w', false);
+  const impact = await evaluate(`document.getElementById('condition').textContent`);
+  assert.equal(await evaluate(`document.getElementById('view').getContext('webgl').getError()`), 0);
+  await snap('a6-v06-impact');
+  await click('#driveReset');
+  assert.equal(await evaluate(`document.getElementById('condition').textContent`), 'Intakt');
+  assert.equal((await inspect()).speed, '0');
 
   await send('Emulation.setDeviceMetricsOverride', {
     width: 915, height: 412, deviceScaleFactor: 2.625, mobile: true,
@@ -201,6 +212,13 @@ try {
   await touch('touchStart', [{ ...start, id: 1 }]);
   await touch('touchEnd', []);
   await enter();
+  await touch('touchStart', [{ x: 406, y: 178, id: 3 }]);
+  await touch('touchMove', [{ x: 525, y: 207, id: 3 }]);
+  await touch('touchEnd', []);
+  await waitFor('Scene drag selects the free camera', () => evaluate(`document.querySelector('#camBtn span').textContent === 'Frei'`));
+  await touch('touchStart', [{ x: 383, y: 192, id: 3 }, { x: 506, y: 192, id: 4 }]);
+  await touch('touchMove', [{ x: 359, y: 192, id: 3 }, { x: 532, y: 192, id: 4 }]);
+  await touch('touchEnd', []);
   const [gas, right, left] = await points('[data-key=throttle]', '[data-key=right]', '[data-key=left]');
   await touch('touchStart', [{ ...gas, id: 1 }, { ...right, id: 2 }]);
   await waitFor('Simultaneous touch throttle and steering', () => evaluate(`document.querySelectorAll('.ctrl.active').length === 2`));
@@ -219,9 +237,10 @@ try {
   })()`);
   assert.equal(overlaps, false, 'Touch instrument cluster must stay clear of pedals');
   await snap('a6-querformat');
+  assert.equal(await evaluate(`document.getElementById('view').getContext('webgl').getError()`), 0);
   assert.deepEqual(exceptions, []);
   assert.deepEqual(failedResources, []);
-  console.log(JSON.stringify({ gpu, desktop, stationRound, mobile, exceptions, failedResources }, null, 2));
+  console.log(JSON.stringify({ gpu, desktop, stationRound, impact, mobile, exceptions, failedResources }, null, 2));
 } catch (error) {
   console.error(error);
   console.error({ exceptions, failedResources, browserLog });
