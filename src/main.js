@@ -5,7 +5,7 @@ import { buildCity, districtAt, halfWorld, roads, roadHalfWidth, roadSurfaceAt, 
 import { makeTraffic } from './world/traffic.js';
 import { lerp, mixAngle } from './render/math.js';
 import { Mesh } from './render/mesh.js';
-import { createRenderer } from './render/renderer.js';
+import { createRenderer } from './render/renderer.js?webgl-android-fix-20261118';
 import { buildVehicles } from './render/vehicles.js';
 import { createMinimap } from './ui/minimap.js';
 import { cameraNames, createCamera } from './ui/camera.js';
