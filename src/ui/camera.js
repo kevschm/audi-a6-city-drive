@@ -27,9 +27,9 @@ export function createCamera() {
       const s = Math.sin(car.heading), c = Math.cos(car.heading);
       const x = car.x - 0.40 * c, z = car.z + 0.40 * s;
       return {
-        eye: [x - 0.12 * s, 1.302 + car.heave, z - 0.12 * c],
-        target: [x + s * 20, 0.99 + car.heave - car.pitch * 7, z + c * 20],
-        fov: 61 * Math.PI / 180,
+        eye: [x - 0.34 * s, 1.28 + car.heave, z - 0.34 * c],
+        target: [car.x + s * 20, 0.42 + car.heave - car.pitch * 7, car.z + c * 20],
+        fov: 62 * Math.PI / 180,
       };
     }
     if (mode === ORBIT_MODE) {

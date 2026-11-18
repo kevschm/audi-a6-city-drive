@@ -3,7 +3,7 @@ export const color = (hex, brightness = 1) => {
   return [16, 8, 0].map(shift => Math.min(1, (value >> shift & 255) / 255 * brightness));
 };
 
-const materialId = { asphalt: 1, paving: 2, grass: 3, roof: 4, plaster: 5, brick: 6, glass: 7, water: 8, metal: 9, foliage: 10 };
+const materialId = { asphalt: 1, paving: 2, grass: 3, roof: 4, plaster: 5, brick: 6, glass: 7, water: 8, metal: 9, foliage: 10, vinyl: 11, veneer: 12 };
 
 export class Mesh {
   constructor() {

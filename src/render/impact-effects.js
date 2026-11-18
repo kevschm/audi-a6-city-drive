@@ -12,6 +12,7 @@ export function createImpactEffects(random = Math.random) {
 
   function emit(impact) {
     const { x, z, nx, nz, closingSpeed, scrapeSpeed } = impact;
+    const height = impact.wheelChange > 0.10 ? 0.18 : 0.35;
     const sparks = Math.round(Math.min(20, (closingSpeed + scrapeSpeed * 0.65) * 1.25));
     const dust = Math.round(Math.min(9, closingSpeed * 0.55));
     for (let i = 0; i < sparks + dust; i++) {
@@ -20,7 +21,7 @@ export function createImpactEffects(random = Math.random) {
       const rebound = 1.1 + random() * 2.8;
       const life = hot ? 0.22 + random() * 0.38 : 0.6 + random() * 0.62;
       add({
-        x: x + nx * 0.16, z: z + nz * 0.16, y: 0.35 + random() * 0.26,
+        x: x + nx * 0.16, z: z + nz * 0.16, y: height + random() * 0.26,
         vx: nx * rebound - nz * lateral, vz: nz * rebound + nx * lateral,
         vy: hot ? 0.65 + random() * 2.5 : random() * 0.42,
         life, type: hot ? 1 : 0, size: hot ? 0.043 : 0.19,

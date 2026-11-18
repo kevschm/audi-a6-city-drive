@@ -1,5 +1,6 @@
 import { basis, identity, intersectsFrustum, multiply, orthographic, perspective, unit, view } from './math.js';
-import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-070';
+import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-080';
+import { dentLimit } from '../simulation/vehicle-damage.js';
 
 export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5, lens: 6 };
 export const GRAPHICS = {
@@ -12,6 +13,7 @@ const eveningSun = [-0.81, 0.12, -0.58];
 const world = identity();
 const white = [1, 1, 1];
 const intact = new Float32Array(4);
+const noDents = new Float32Array(dentLimit * 4);
 const shadowRange = 48;
 const shadowSize = 1536;
 
@@ -29,7 +31,8 @@ function pipeline(gl, vertex, fragment, uniforms) {
   ['aPos', 'aColor', 'aNormal', 'aMaterial'].forEach((name, index) => gl.bindAttribLocation(program, index, name));
   gl.linkProgram(program);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
-  const locations = Object.fromEntries(uniforms.map(name => [name, gl.getUniformLocation(program, 'u' + name)]));
+  const locations = Object.fromEntries(uniforms.map(name =>
+    [name, gl.getUniformLocation(program, 'u' + name + (name === 'Dents' ? '[0]' : ''))]));
   return { program, ...locations };
 }
 
@@ -98,9 +101,9 @@ export function createRenderer(canvas) {
   const sky = pipeline(gl, shader(skyVertex), shader(skyFragment), ['Forward', 'Right', 'Up', 'Frame', 'Sun', 'Dusk']);
   const lit = pipeline(gl, shader(meshVertex), shader(meshFragment), [
     'VP', 'Model', 'Light', 'Eye', 'Sun', 'Dusk', 'Tint', 'Contact', 'Style', 'Emission', 'Shadows', 'Texel',
-    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Street', 'Wet', 'MirrorPass', 'MirrorOn', 'MirrorVP', 'Mirror', 'Stride',
+    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Dents', 'Rim', 'Street', 'Wet', 'MirrorPass', 'MirrorOn', 'MirrorVP', 'Mirror', 'Stride',
   ]);
-  const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage']);
+  const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage', 'Dents', 'Rim']);
   const particles = pipeline(gl, shader(particleVertex), shader(particleFragment), ['VP', 'Viewport']);
   const particleBuffer = gl.createBuffer();
   const streetUniform = new Float32Array(12);
@@ -117,6 +120,7 @@ export function createRenderer(canvas) {
   gl.depthFunc(gl.LEQUAL);
   let calls = 0;
   let shadowKey, cachedLight, mirrorVP = world, mirrorAge = 0;
+  let litWasDamaged = false, depthWasDamaged = false;
 
   function drawScreen() {
     gl.bindBuffer(gl.ARRAY_BUFFER, screen);
@@ -143,12 +147,22 @@ export function createRenderer(canvas) {
     calls++;
   }
 
-  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage = intact, stride = 0 }) {
+  function setDeformation(pass, wasDamaged, damage = intact, dents = noDents, rim = 0) {
+    const active = damage !== intact || rim > 0;
+    if (active || wasDamaged) {
+      gl.uniform4fv(pass.Damage, damage);
+      gl.uniform4fv(pass.Dents, dents);
+      gl.uniform1f(pass.Rim, rim);
+    }
+    return active;
+  }
+
+  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage, dents, rim, stride = 0 }) {
     gl.uniformMatrix4fv(lit.Model, false, model);
     gl.uniform3fv(lit.Tint, tint);
     gl.uniform1f(lit.Style, style);
     gl.uniform1f(lit.Emission, emission);
-    gl.uniform4fv(lit.Damage, damage);
+    litWasDamaged = setDeformation(lit, litWasDamaged, damage, dents, rim);
     gl.uniform1f(lit.Stride, stride);
     draw(mesh, true);
   }
@@ -221,14 +235,14 @@ export function createRenderer(canvas) {
         gl.useProgram(depth.program);
         gl.uniformMatrix4fv(depth.Light, false, cachedLight);
         gl.uniformMatrix4fv(depth.Model, false, world);
-        gl.uniform4fv(depth.Damage, intact);
+        depthWasDamaged = setDeformation(depth, depthWasDamaged);
         for (const chunk of chunks) {
           if (intersectsFrustum(cachedLight, chunk)) draw(chunk.mesh, false);
         }
         if (qualityPass) for (const object of objects) {
           if (!object.castsShadow || (object.bounds && !intersectsFrustum(cachedLight, object.bounds))) continue;
           gl.uniformMatrix4fv(depth.Model, false, object.model);
-          gl.uniform4fv(depth.Damage, object.damage || intact);
+          depthWasDamaged = setDeformation(depth, depthWasDamaged, object.damage, object.dents, object.rim);
           draw(object.mesh, false);
         }
         gl.colorMask(true, true, true, true);

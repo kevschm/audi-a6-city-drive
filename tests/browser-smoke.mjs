@@ -7,6 +7,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const dist = resolve('dist');
+const baseUrl = process.env.GAME_URL;
+const { version } = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
 const profile = await mkdtemp(join(tmpdir(), 'a6-browser-'));
 const executable = process.env.BROWSER_BIN || (process.platform === 'win32'
   ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
@@ -19,7 +21,7 @@ const browser = spawn(executable, [
   ...(engine === 'swiftshader' ? ['--enable-unsafe-swiftshader'] : []),
   'about:blank',
 ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
-const server = spawn(process.execPath, [resolve('scripts/serve.mjs')], {
+const server = baseUrl ? null : spawn(process.execPath, [resolve('scripts/serve.mjs')], {
   cwd: dist, windowsHide: true, env: { ...process.env, HOST: '127.0.0.1', PORT: '0' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -27,9 +29,9 @@ let serverPort;
 let spawnError;
 let browserLog = '';
 browser.on('error', error => { spawnError = error; });
-server.on('error', error => { spawnError = error; });
+server?.on('error', error => { spawnError = error; });
 browser.stderr.on('data', chunk => { browserLog = (browserLog + chunk).slice(-1200); });
-server.stdout.on('data', chunk => { serverPort = chunk.toString().match(/localhost:(\d+)/)?.[1] || serverPort; });
+server?.stdout.on('data', chunk => { serverPort = chunk.toString().match(/localhost:(\d+)/)?.[1] || serverPort; });
 const exceptions = [], failedResources = [];
 let socket;
 
@@ -106,7 +108,7 @@ try {
   let navigation = 0;
   const open = async () => {
     const query = '?test=' + ++navigation;
-    await send('Page.navigate', { url: 'http://127.0.0.1:' + serverPort + '/' + query });
+    await send('Page.navigate', { url: new URL(query, baseUrl || 'http://127.0.0.1:' + serverPort + '/').href });
     const ready = await waitFor('WebGL startup', () => evaluate(`(() => {
       if (location.search !== ${JSON.stringify(query)}) return;
       const error = document.getElementById('errorModal');
@@ -114,6 +116,7 @@ try {
       if (document.getElementById('startBtn')?.disabled === false) return { ready: true };
     })()`));
     assert.equal(ready.error, undefined);
+    assert.equal(await evaluate(`document.querySelector('meta[name="game-version"]').content`), version);
   };
   const enter = () => waitFor('Fahrt gestartet', () => evaluate(`document.getElementById('intro').classList.contains('hidden')`));
   const speedOver = limit => waitFor('Speed above ' + limit, async () => Number((await inspect()).speed) > limit);
@@ -121,7 +124,7 @@ try {
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Network.enable');
-  await waitFor('Static build server', () => serverPort);
+  if (server) await waitFor('Static build server', () => serverPort);
   await open();
   const gpu = await evaluate(`(() => {
     const gl = document.getElementById('view').getContext('webgl');
@@ -161,7 +164,9 @@ try {
   await press('v');
   await press('v');
   assert.equal(await evaluate(`document.querySelector('#camBtn span').textContent`), 'Cockpit');
-  await snap('a6-v07-cockpit');
+  if (process.env.SCREENSHOT_DIR) await waitFor('Cockpit cleared of camera hint', () =>
+    evaluate(`!document.getElementById('toast').classList.contains('show')`));
+  await snap('a6-v08-cockpit');
   await press('q');
   await press('l');
   assert.equal(await evaluate(`document.getElementById('lightBtn').getAttribute('aria-pressed')`), 'false');
@@ -201,13 +206,16 @@ try {
   await click('#audioBtn');
   await click('#driveReset');
   await toggleKey('w', true);
-  await waitFor('Visible crash damage', () => evaluate(`document.getElementById('condition').textContent !== 'Intakt'`), 38000);
+  await waitFor('Visible body and chassis damage', () => evaluate(`document.getElementById('condition').textContent !== 'Intakt' &&
+    !document.getElementById('runningGear').hidden`), 38000);
   await toggleKey('w', false);
   const impact = await evaluate(`document.getElementById('condition').textContent`);
+  assert.equal(await evaluate(`document.getElementById('runningGear').hidden`), false);
   assert.equal(await evaluate(`document.getElementById('view').getContext('webgl').getError()`), 0);
-  await snap('a6-v06-impact');
+  await snap('a6-v08-impact');
   await click('#driveReset');
   assert.equal(await evaluate(`document.getElementById('condition').textContent`), 'Intakt');
+  assert.equal(await evaluate(`document.getElementById('runningGear').hidden`), true);
   assert.equal((await inspect()).speed, '0');
 
   await send('Emulation.setDeviceMetricsOverride', {
@@ -257,5 +265,5 @@ try {
 } finally {
   socket?.close();
   browser.kill();
-  server.kill();
+  server?.kill();
 }

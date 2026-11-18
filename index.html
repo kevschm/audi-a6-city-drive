@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#151b1b">
-  <meta name="game-version" content="0.7.0">
+  <meta name="game-version" content="0.8.0">
   <title>Audi A6 City Drive</title>
   <meta name="game-build" content="WEBGL-ANDROID-20261118B">
-  <link rel="stylesheet" href="./src/styles.css">
+  <link rel="stylesheet" href="./src/styles.css?drive-080">
 </head>
 <body>
   <main id="game">
@@ -46,6 +46,7 @@
           <div id="conditionPanels" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
           <small id="condition">Intakt</small>
         </div>
+        <small id="runningGear" class="running-gear" hidden></small>
         <div class="telemetry"><small id="dist">0,0 km</small><small id="fps" aria-label="Bildrate">– FPS</small></div>
       </div>
       <div class="indicators" aria-label="Blinker">
@@ -110,6 +111,6 @@
       document.getElementById('errorModal').classList.remove('hidden');
     }, true);
   </script>
-  <script type="module" src="./src/main.js?drive-070"></script>
+  <script type="module" src="./src/main.js?drive-080"></script>
 </body>
 </html>

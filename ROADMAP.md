@@ -1,5 +1,11 @@
 # Entwicklungsstand und offene Arbeiten
 
+## Version 0.8
+
+Der Avant hat einen stärker profilierten Kühlergrill, überarbeitete Streuscheiben, separate Scheinwerferwaschdüsen und eine ausgeformte untere Stoßfängerkante. Im Cockpit ergänzen ein Vier-Speichen-Lenkrad, beschriftete Rundinstrumente, Kassettenradio, Klimabedienung und prozedurales Holzdekor die Fahreransicht.
+
+Die bestehende 60-Hz-Kollision ermittelt eine Kontaktstelle am Fahrzeuggestell. Bis zu sechs Dellen können sich lokal überlagern. Jedes Rad und beide Achsen speichern getrennt Schäden. Ein beschädigtes Rad kann eiern, die Spur verziehen und hörbar ungleichmäßig abrollen. Je nach Achsschaden sinken Seitenführung und Bremsgriff. Die Dellen werden im WebGL-Shader für Modell und Schatten berechnet.
+
 ## Version 0.7
 
 Cockpit mit bewegtem Lenkrad, Tacho und Drehzahlmesser, nasse Straßen mit Spiegelung und angepasstem Grip sowie animierte Fußgänger an Bahnhof, Markt und Park. Glattere Spiegelgehäuse und Baumkronen, Fahrräder vor dem Bahnhof und stärkere Reflexionsdetails ergänzen die vorhandenen Modelle.
@@ -23,6 +29,6 @@ Die 60-Hz-Fahrphysik liest die Straßenhöhe an vier Radpositionen. Bordsteine, 
 ## Nächste Ausbauschritte
 
 - Auf einem Galaxy S24+ über längere Fahrten Frametimes und Thermik messen und Grafikstufen damit einstellen.
-- Das Cockpit mit Referenzen für Materialien und Instrumente verfeinern und weitere Aktivitäten für Parken und Erkundung erproben.
+- Weitere Aktivitäten für Parken und Erkundung erproben.
 - Weitere städtebauliche Varianten, Geländeprofile und Fernsicht ergänzen.
 - Eine Pipeline für glTF und lizenzierte PBR-Texturen mit dem vorhandenen Renderer vergleichen. Eine Starrkörper-Engine anhand geneigter Straßen und beweglicher Hindernisse bewerten.

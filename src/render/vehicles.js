@@ -1,7 +1,7 @@
 import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
-import { MATERIAL } from './renderer.js?drive-070';
+import { MATERIAL } from './renderer.js?drive-080';
 import { createCockpit, dialAngle, dialPose } from './cockpit.js';
 import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
 
@@ -99,8 +99,8 @@ export function buildVehicles(renderer) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll, car.pitch);
       contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading, Math.max(0, Math.min(car.heave, 0.16))), style: MATERIAL.contact });
       const damage = car.damage;
-      const front = 1 - damage[0] * 0.91, rear = 1 - damage[1] * 0.94;
-      const shell = { model: body, damage };
+      const front = 1 - damage[0] * 0.23, rear = 1 - damage[1] * 0.23;
+      const shell = { model: body, damage, dents: car.dents };
       objects.push(
         { ...shell, mesh: avant.body, castsShadow: true },
         { ...shell, mesh: avant.paint, style: MATERIAL.paint, castsShadow: true },
@@ -117,12 +117,14 @@ export function buildVehicles(renderer) {
       let index = 0;
       for (const z of [AVANT_WHEELS.front, AVANT_WHEELS.rear]) {
         for (const side of [-1, 1]) {
-          const mount = translate(side * AVANT_WHEELS.halfTrack, AVANT_WHEELS.radius + (car.wheelTravel?.[index] || 0), z);
+          const rim = car.wheelDamage[index];
+          const axle = car.axleDamage[index < 2 ? 0 : 1];
+          const mount = translate(side * AVANT_WHEELS.halfTrack, AVANT_WHEELS.radius + car.wheelTravel[index] - rim * 0.055, z);
           const steer = car.wheelSteer?.[index] ?? (z > 0 ? car.steer : 0);
           const spin = car.wheelSpin?.[index] ?? car.spin;
-          const rotation = multiply(rotateY(steer), rotateX(spin));
-          const model = multiply(chassis, multiply(mount, rotation));
-          objects.push({ mesh: avant.wheel, model, castsShadow: true });
+          const camber = dialPose(mount, 0, 0, 0, side * (rim * 0.31 + axle * 0.075) + Math.sin(spin) * rim * 0.048);
+          const model = multiply(chassis, multiply(camber, multiply(rotateY(steer), rotateX(spin))));
+          objects.push({ mesh: avant.wheel, model, rim, castsShadow: true });
           index++;
         }
       }
@@ -130,11 +132,11 @@ export function buildVehicles(renderer) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll * 0.64, car.pitch);
       objects.push(
         { mesh: cabin.shell, model: body, cockpit: true },
-        { mesh: cabin.hood, model: body, cockpit: true, style: MATERIAL.paint, damage: car.damage },
-        { mesh: cabin.instruments, model: body, cockpit: true, emission: 0.18 + dusk * 0.13 },
-        { mesh: cabin.wheel, model: dialPose(body, -0.396, 0.963, 0.449, -car.steer * 2.90), cockpit: true },
-        { mesh: cabin.needle, model: dialPose(body, -0.482, 1.021, 0.625, dialAngle(Math.abs(car.speed) * 3.6, 240)), cockpit: true, emission: 0.55 },
-        { mesh: cabin.needle, model: dialPose(body, -0.298, 1.021, 0.625, dialAngle(car.rpm, 7200)), cockpit: true, emission: 0.55 },
+        { mesh: cabin.hood, model: body, cockpit: true, style: MATERIAL.paint, damage: car.damage, dents: car.dents },
+        { mesh: cabin.instruments, model: body, cockpit: true, emission: headlights ? 0.64 : 0.34 + dusk * 0.16 },
+        { mesh: cabin.wheel, model: dialPose(body, -0.396, 0.909, 0.382, -car.steer * 2.90), cockpit: true },
+        { mesh: cabin.needle, model: dialPose(body, -0.486, 1.026, 0.619, dialAngle(Math.abs(car.speed) * 3.6, 240)), cockpit: true, emission: 0.55 },
+        { mesh: cabin.needle, model: dialPose(body, -0.297, 1.026, 0.619, dialAngle(car.rpm, 7000)), cockpit: true, emission: 0.55 },
       );
     }
     return { objects, contacts };

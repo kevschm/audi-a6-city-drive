@@ -1,5 +1,5 @@
 import { moveVehicle } from './vehicle-collision.js';
-import { availablePower } from './vehicle-damage.js';
+import { availablePower, dentLimit } from './vehicle-damage.js';
 import { HALF_TRACK, TIRE_RADIUS, WHEELBASE, WHEEL_CONTACTS, stepSuspension, wheelSurfaceAt } from './vehicle-suspension.js';
 export { vehicleOverlapsTraffic } from './vehicle-collision.js';
 
@@ -36,7 +36,8 @@ export function createVehicleState() {
     throttle: 0, gearIndex: 0, shiftTimer: 0, rpm: IDLE_RPM, gear: 'N', reverseArmed: true,
     road: true, surface: 'asphalt', brakeLights: false, reverseLights: false,
     collisionImpact: 0, skid: 0, longitudinalAccel: 0, lateralAccel: 0,
-    damage: [0, 0, 0, 0], impact: null,
+    damage: [0, 0, 0, 0], dents: new Float32Array(4 * dentLimit),
+    wheelDamage: [0, 0, 0, 0], axleDamage: [0, 0], impact: null,
   };
 }
 
@@ -125,7 +126,10 @@ export function stepVehicle(car, input, dt, world = {}) {
   const steerLimit = (0.53 + 0.009 * speed) / (1 + (speed / 10) ** 1.65);
   const centering = steering === 0 || steering * car.steer < 0;
   const steerRate = centering ? 8.1 : mix(6.6, 5.3, clamp(speed / 26, 0, 1));
-  const toe = (car.damage[3] - car.damage[2]) * 0.022 * clamp(speed / 9, 0, 1);
+  const [leftFront, rightFront, leftRear, rightRear] = car.wheelDamage;
+  const bias = (rightFront - leftFront) * 0.068 + (rightRear - leftRear) * 0.026 +
+    (car.damage[3] - car.damage[2]) * 0.012;
+  const toe = bias * clamp(speed / 8, 0, 1);
   car.steer = follow(car.steer, steering * steerLimit + toe, steerRate, dt);
   const steerSin = Math.sin(car.steer), steerCos = Math.cos(car.steer);
 
@@ -137,8 +141,10 @@ export function stepVehicle(car, input, dt, world = {}) {
   const leftWeight = 0.5 + clamp(car.lateralAccel * CG_HEIGHT / (2 * GRAVITY * HALF_TRACK), -0.32, 0.32);
   const wet = clamp(world.wetness ?? 0, 0, 1);
   const wetGrip = 1 - wet * (surface === SURFACES.grass ? 0.12 : 0.16 + clamp((speed - 18) / 25, 0, 1) * 0.075);
-  const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96 * wetGrip;
-  const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1) * wetGrip;
+  const frontHealth = 1 - (leftFront + rightFront) * 0.19 - car.axleDamage[0] * 0.17;
+  const rearHealth = 1 - (leftRear + rightRear) * 0.19 - car.axleDamage[1] * 0.17;
+  const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96 * wetGrip * frontHealth;
+  const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1) * wetGrip * rearHealth;
   const shiftPower = car.shiftTimer > 0 ? mix(1, 0.36, clamp(car.shiftTimer / 0.18, 0, 1)) : 1;
   const reversePower = reverseDrive ? -0.64 * (1 - clamp(speed / 9, 0, 1) ** 4) : 1;
   const traction = driveCommand > 0 ? car.throttle * reversePower * engineTorque(car.rpm) *
@@ -151,7 +157,8 @@ export function stepVehicle(car, input, dt, world = {}) {
   const rearLong = clamp(-direction * (brakeForce * 0.32 + rearBrake), -rearGrip, rearGrip);
   const coupledDrag = (!driveCommand && !serviceBrake) ? 110 * ratio * clamp(speed / 6, 0, 1) : 0;
   const resistance = direction * Math.min(MASS * speed / dt,
-    MASS * GRAVITY * surface.rolling + 0.44 * speed * speed + coupledDrag);
+    MASS * GRAVITY * surface.rolling + 0.44 * speed * speed + coupledDrag +
+    (1 - Math.min(frontHealth, rearHealth)) * (480 + 31 * speed));
 
   // A front-heavy two-axle bicycle model. Below walking speed the dynamic
   // slip angles become ill-conditioned, so blend with steering geometry.
