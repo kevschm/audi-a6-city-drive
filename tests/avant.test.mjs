@@ -93,6 +93,14 @@ test('both direction indicators are visible from both ends and independent by si
   }
 });
 
+test('the exterior windshield has a real aperture with a head restraint visible behind the pane', () => {
+  const { glass, wheel, ...opaque } = collectAvant();
+  assert.equal(visibleInEndView(glass, .39, 1.218, 1)?.part, 'glass');
+  const seat = visibleInEndView(Object.values(opaque).flat(), .39, 1.218, 1);
+  assert.equal(seat.part, 'body');
+  assert.ok(Math.max(...seat.points.map(p => p[2])) < .12);
+});
+
 test('the packed body surface and alloy wheels retain unit corner normals', () => {
   const meshes = Object.fromEntries(parts.map(part => [part, new Mesh()]));
   buildAvant(meshes);

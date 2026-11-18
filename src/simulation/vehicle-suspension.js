@@ -67,7 +67,8 @@ export function stepSuspension(car, world, surfaces, fallbackSurface, handbrake,
     car.wheelGround[i] = ground;
     const { roughness } = wheelSurfaceAt(world.roadSurfaceAt, x, z, surfaces, fallbackSurface);
     const bumps = Math.sin(x * 2.0 + z * 1.57) + 0.42 * Math.sin(x * 4.7 - z * 3.1);
-    updateWheelContact(car, i, ground + roughness * bumps * bumpSpeed, dt);
+    const hubDrop = car.lostWheels & (1 << i) ? .185 : 0;
+    updateWheelContact(car, i, ground - hubDrop + roughness * bumps * bumpSpeed, dt);
 
     // Ackermann geometry splits the steering angle and lets inner wheels
     // turn less distance through a corner. The handbrake locks the rear pair.

@@ -29,9 +29,10 @@ const wheelToCrank = (speed, ratio) => Math.abs(speed) * ratio * FINAL_DRIVE * 6
 export function createVehicleState() {
   return {
     x: 0, z: 0, heading: 0, vx: 0, vz: 0, speed: 0, yaw: 0, steer: 0, spin: 0, km: 0,
-    roll: 0, pitch: 0, heave: 0, rollRate: 0, pitchRate: 0, heaveRate: 0,
+    roll: 0, pitch: 0, heave: 0, rollRate: 0, pitchRate: 0, heaveRate: 0, sled: null, lateralTest: false,
     wheelTravel: [0, 0, 0, 0], wheelVelocity: [0, 0, 0, 0], wheelGround: [0, 0, 0, 0],
     wheelSteer: [0, 0, 0, 0], wheelSpin: [0, 0, 0, 0],
+    tireGrip: [0, 0, 0, 0], tireBrake: [0, 0, 0, 0], frontSlip: 0, rearSlip: 0,
     throttle: 0, gearIndex: 0, shiftTimer: 0, rpm: IDLE_RPM, gear: 'N', reverseArmed: true,
     road: true, surface: 'asphalt', brakeLights: false, reverseLights: false,
     collisionImpact: 0, skid: 0, longitudinalAccel: 0, lateralAccel: 0,
@@ -83,16 +84,6 @@ function tireLateralForce(slip, stiffness, grip, longitudinal) {
   return lateralBudget > 0 ? -lateralBudget * Math.tanh(stiffness * slip / lateralBudget) : 0;
 }
 
-function axleSurfaceGrip(car, surfaceAt, fallbackSurface, leftWeight, sin, cos, axle) {
-  if (!surfaceAt) return fallbackSurface.grip;
-  const left = WHEEL_CONTACTS[axle * 2], right = WHEEL_CONTACTS[axle * 2 + 1];
-  const axleX = car.x + sin * left[1];
-  const axleZ = car.z + cos * left[1];
-  const leftGrip = wheelSurfaceAt(surfaceAt, axleX + cos * left[0], axleZ - sin * left[0], SURFACES, fallbackSurface).grip;
-  const rightGrip = wheelSurfaceAt(surfaceAt, axleX + cos * right[0], axleZ - sin * right[0], SURFACES, fallbackSurface).grip;
-  return mix(rightGrip, leftGrip, leftWeight);
-}
-
 export function stepVehicle(car, input, dt, world = {}) {
   const sin = Math.sin(car.heading), cos = Math.cos(car.heading);
   const longitudinal = car.vx * sin + car.vz * cos;
@@ -142,8 +133,18 @@ export function stepVehicle(car, input, dt, world = {}) {
   const wetGrip = 1 - wet * (surface === SURFACES.grass ? 0.12 : 0.16 + clamp((speed - 18) / 25, 0, 1) * 0.075);
   const frontHealth = 1 - (leftFront + rightFront) * 0.19 - car.axleDamage[0] * 0.17;
   const rearHealth = 1 - (leftRear + rightRear) * 0.19 - car.axleDamage[1] * 0.17;
-  const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96 * wetGrip * frontHealth;
-  const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1) * wetGrip * rearHealth;
+  for (let i = 0; i < 4; i++) {
+    const [wx, wz] = WHEEL_CONTACTS[i], front = i < 2;
+    const x = car.x + wx * cos + wz * sin, z = car.z - wx * sin + wz * cos;
+    const mu = wheelSurfaceAt(world.roadSurfaceAt, x, z, SURFACES, surface).grip;
+    const loadFraction = i % 2 ? 1 - leftWeight : leftWeight;
+    const health = 1 - car.wheelDamage[i] * .40 - car.axleDamage[front ? 0 : 1] * .17;
+    const load = (front ? frontLoad : rearLoad) * loadFraction;
+    car.tireGrip[i] = load * mu * wetGrip * health * (front ? .96 : 1) * (1.06 - .12 * loadFraction);
+    if (car.lostWheels & (1 << i)) car.tireGrip[i] = load * .055;
+  }
+  const [fl, fr, rl, rr] = car.tireGrip;
+  const frontGrip = fl + fr, rearGrip = rl + rr;
   const shiftPower = car.shiftTimer > 0 ? mix(1, 0.36, clamp(car.shiftTimer / 0.18, 0, 1)) : 1;
   const reversePower = reverseDrive ? -0.64 * (1 - clamp(speed / 9, 0, 1) ** 4) : 1;
   const traction = driveCommand > 0 ? car.throttle * reversePower * engineTorque(car.rpm) *
@@ -152,12 +153,23 @@ export function stepVehicle(car, input, dt, world = {}) {
   const direction = Math.sign(longitudinal);
   const brakeForce = Math.min(MASS * 11.5 * serviceBrake * (1 - car.mechanical.brakes * 0.55), MASS * speed / dt);
   const rearBrake = Math.min(MASS * 5.4 * handbrake, MASS * speed / dt);
-  const frontLong = clamp(traction - direction * brakeForce * 0.68, -frontGrip, frontGrip);
-  const rearLong = clamp(-direction * (brakeForce * 0.32 + rearBrake), -rearGrip, rearGrip);
+  for (let i = 0; i < 4; i++) {
+    const request = (i < 2 ? brakeForce * .34 : brakeForce * .16 + rearBrake * .5);
+    car.tireBrake[i] = Math.min(request * (1 - .45 * car.wheelDamage[i]), car.tireGrip[i]);
+  }
+  const [bfl, bfr, brl, brr] = car.tireBrake;
+  // Small differential preload can transmit limited torque across a split
+  // surface. Never allocate more than the requested torque or tire budget.
+  const lowSide = Math.min(Math.abs(traction) * .5, fl, fr);
+  const highSide = Math.min(Math.abs(traction) - lowSide, Math.max(fl, fr), lowSide + 55 / TIRE_RADIUS);
+  const driveLeft = Math.sign(traction) * (fl > fr ? highSide : lowSide);
+  const driveRight = Math.sign(traction) * (fl > fr ? lowSide : highSide);
+  const frontLong = driveLeft + driveRight - direction * (bfl + bfr);
+  const rearLong = -direction * (brl + brr);
   const coupledDrag = (!driveCommand && !serviceBrake) ? 110 * ratio * clamp(speed / 6, 0, 1) : 0;
   const resistance = direction * Math.min(MASS * speed / dt,
     MASS * GRAVITY * surface.rolling + 0.44 * speed * speed + coupledDrag +
-    (1 - Math.min(frontHealth, rearHealth)) * (480 + 31 * speed));
+    (1 - Math.min(frontHealth, rearHealth)) * (480 + 31 * speed) + (car.lostWheels ? 820 : 0));
 
   // A front-heavy two-axle bicycle model. Below walking speed the dynamic
   // slip angles become ill-conditioned, so blend with steering geometry.
@@ -166,9 +178,15 @@ export function stepVehicle(car, input, dt, world = {}) {
   const frontRolling = longitudinal * steerCos + frontLateral * steerSin;
   const frontSlip = Math.atan2(frontLateral * steerCos - longitudinal * steerSin, Math.max(2.5, Math.abs(frontRolling)));
   const rearSlip = Math.atan2(lateral - REAR_AXLE * car.yaw, speedForSlip);
-  const frontLat = tireLateralForce(frontSlip, 58_000, frontGrip, frontLong);
-  const rearLat = tireLateralForce(rearSlip, 55_000 * (1 - 0.73 * handbrake), rearGrip, rearLong);
-  const dynamicWeight = clamp((speed - 1.5) / 3.2, 0, 1);
+  const response = Math.max(12, speed / .38);
+  car.frontSlip = follow(car.frontSlip, frontSlip, response, dt);
+  car.rearSlip = follow(car.rearSlip, rearSlip, response, dt);
+  const frontLat = tireLateralForce(car.frontSlip, 58_000 * fl / frontGrip, fl, driveLeft - direction * bfl) +
+    tireLateralForce(car.frontSlip, 58_000 * fr / frontGrip, fr, driveRight - direction * bfr);
+  const rearStiffness = 55_000 * (1 - 0.73 * handbrake);
+  const rearLat = tireLateralForce(car.rearSlip, rearStiffness * rl / rearGrip, rl, brl) +
+    tireLateralForce(car.rearSlip, rearStiffness * rr / rearGrip, rr, brr);
+  const dynamicWeight = clamp((Math.hypot(longitudinal, lateral) - 1.5) / 3.2, 0, 1);
   const lateralAccel = (frontLat * steerCos + frontLong * steerSin + rearLat) / MASS;
   const [frontLeft, frontRight, rearLeft, rearRight] = car.wheelGround;
   const grade = clamp((rearLeft + rearRight - frontLeft - frontRight) / (2 * WHEELBASE), -0.22, 0.22);
@@ -178,7 +196,9 @@ export function stepVehicle(car, input, dt, world = {}) {
   if (driveCommand === 0 && longitudinal * nextLong < 0) nextLong = 0;
   car.longitudinalAccel = follow(car.longitudinalAccel, longAccel, 11, dt);
 
-  const dynamicYaw = car.yaw + ((frontLat * steerCos + frontLong * steerSin) * FRONT_AXLE - rearLat * REAR_AXLE) / YAW_INERTIA * dt;
+  const brakeMoment = HALF_TRACK * ((driveLeft - driveRight) * steerCos +
+    direction * ((bfr - bfl) * steerCos + brr - brl));
+  const dynamicYaw = car.yaw + ((frontLat * steerCos + frontLong * steerSin) * FRONT_AXLE - rearLat * REAR_AXLE + brakeMoment) / YAW_INERTIA * dt;
   const bicycleYaw = nextLong * Math.tan(car.steer) / WHEELBASE;
   car.yaw = mix(follow(car.yaw, bicycleYaw, 12, dt), dynamicYaw, dynamicWeight);
   const nextHeading = car.heading + car.yaw * dt;

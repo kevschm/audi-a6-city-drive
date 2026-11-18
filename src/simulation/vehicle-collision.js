@@ -25,6 +25,26 @@ function projectedHalfSpan(shape, x, z) {
     shape.halfLength * Math.abs(x * shape.sin + z * shape.cos);
 }
 
+// Clip the rectangle to a thin layer behind its supporting face. A corner
+// touching at an angle exposes a narrow patch even beside a very wide wall.
+function faceInterval(shape, nx, nz, direction, depth) {
+  const tx = -nz, tz = nx;
+  const corners = [[-1,-1], [1,-1], [1,1], [-1,1]].map(([sx, sz]) => {
+    const x = shape.x + sx * shape.halfWidth * shape.cos + sz * shape.halfLength * shape.sin;
+    const z = shape.z - sx * shape.halfWidth * shape.sin + sz * shape.halfLength * shape.cos;
+    return [direction * (x * nx + z * nz), x * tx + z * tz];
+  });
+  const support = Math.max(...corners.map(p => p[0]));
+  const plane = support - Math.min(.10, .035 + depth);
+  const points = [];
+  for (let i = 0; i < 4; i++) {
+    const [da, ta] = corners[i], [db, tb] = corners[(i + 1) % 4];
+    if (da >= plane) points.push(ta);
+    if ((da < plane) !== (db < plane)) points.push(ta + (tb - ta) * (plane - da) / (db - da));
+  }
+  return { min: Math.min(...points), max: Math.max(...points), support: support * direction };
+}
+
 function overlap(a, b) {
   const dx = a.x - b.x, dz = a.z - b.z;
   if (Math.abs(dx) >= a.spanX + b.spanX || Math.abs(dz) >= a.spanZ + b.spanZ) return null;
@@ -43,12 +63,11 @@ function overlap(a, b) {
       nz = z * side;
     }
   }
-  const aSpan = projectedHalfSpan(a, -nz, nx), bSpan = projectedHalfSpan(b, -nz, nx);
-  const separation = dx * -nz + dz * nx;
-  const overlapWidth = Math.min(aSpan, separation + bSpan) - Math.max(-aSpan, separation - bSpan);
-  const alignment = Math.max(Math.abs(nx * b.cos - nz * b.sin), Math.abs(nx * b.sin + nz * b.cos));
-  const contactWidth = Math.max(0.07, overlapWidth * Math.max(0.20, (alignment - 0.72) / 0.28));
-  return { depth, nx, nz, contactWidth };
+  const aa = faceInterval(a, nx, nz, -1, depth), bb = faceInterval(b, nx, nz, 1, depth);
+  const lo = Math.max(aa.min, bb.min), hi = Math.min(aa.max, bb.max);
+  const tangent = (lo + hi) / 2, normal = (aa.support + bb.support) / 2;
+  return { depth, nx, nz, contactWidth: Math.max(.035, hi - lo),
+    cx: normal * nx - tangent * nz, cz: normal * nz + tangent * nx };
 }
 
 function trafficRectangle(actor) {
@@ -63,6 +82,11 @@ export function vehicleOverlapsTraffic(vehicle, actor) {
 function impactPoint(pose, hit, width, length) {
   const { x, z, heading } = pose;
   const sin = Math.sin(heading), cos = Math.cos(heading);
+  if (hit.cx !== undefined) {
+    const dx = hit.cx - x, dz = hit.cz - z;
+    const localX = limit(dx * cos - dz * sin, width), localZ = limit(dx * sin + dz * cos, length);
+    return { x: x + localX * cos + localZ * sin, z: z - localX * sin + localZ * cos, localX, localZ };
+  }
   const preferredX = (hit.targetX ?? x) - x, preferredZ = (hit.targetZ ?? z) - z;
   const lateral = -hit.nx * cos + hit.nz * sin;
   const longitudinal = -hit.nx * sin - hit.nz * cos;
@@ -181,7 +205,7 @@ export function moveVehicle(vehicle, dt, world) {
         const rx = point.x - other.x, rz = point.z - other.z;
         applyImpact(actor, closingSpeed, scrapeSpeed, -hit.nx, -hit.nz, point.x, point.z,
           limit(rx * cos - rz * sin, TRAFFIC_HALF_WIDTH), limit(rx * sin + rz * cos, TRAFFIC_HALF_LENGTH),
-          actor.heading, { crushEnergy: energy * (1 - material.crushShare) });
+          actor.heading, { crushEnergy: energy * (1 - material.crushShare), contactWidth });
       }
       if (prop) {
         prop.asleep = false;

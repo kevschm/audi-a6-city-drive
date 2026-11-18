@@ -1,6 +1,7 @@
 import { basis, identity, intersectsFrustum, multiply, orthographic, perspective, unit, view } from './math.js';
-import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-090';
+import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-0100';
 import { dentLimit } from '../simulation/vehicle-damage.js';
+import { createReflectionProbe } from './reflection-probe.js';
 
 export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5, lens: 6, crackedScreen: 7 };
 export const GRAPHICS = {
@@ -13,6 +14,7 @@ const eveningSun = [-0.81, 0.12, -0.58];
 const world = identity();
 const white = [1, 1, 1];
 const intact = new Float32Array(4);
+const intactRoof = new Float32Array(2);
 const noDents = new Float32Array(dentLimit * 4);
 const shadowRange = 48;
 const shadowSize = 1536;
@@ -32,7 +34,7 @@ function pipeline(gl, vertex, fragment, uniforms) {
   gl.linkProgram(program);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
   const locations = Object.fromEntries(uniforms.map(name =>
-    [name, gl.getUniformLocation(program, 'u' + name + (name === 'Dents' ? '[0]' : ''))]));
+    [name, gl.getUniformLocation(program, 'u' + name + (name === 'Dents' || name === 'SideGlass' ? '[0]' : ''))]));
   return { program, ...locations };
 }
 
@@ -81,11 +83,17 @@ function sceneTarget(gl) {
       gl.bindTexture(gl.TEXTURE_2D, image);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
-      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_STENCIL, width, height);
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, image, 0);
-      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
       ready = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      if (!ready) {
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, null);
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+        ready = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       return ready;
     },
@@ -101,9 +109,9 @@ export function createRenderer(canvas) {
   const sky = pipeline(gl, shader(skyVertex), shader(skyFragment), ['Forward', 'Right', 'Up', 'Frame', 'Sun', 'Dusk']);
   const lit = pipeline(gl, shader(meshVertex), shader(meshFragment), [
     'VP', 'Model', 'Light', 'Eye', 'Sun', 'Dusk', 'Tint', 'Contact', 'Style', 'Emission', 'Pane', 'Shadows', 'Texel',
-    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Dents', 'Rim', 'Street', 'Wet', 'MirrorPass', 'MirrorOn', 'MirrorVP', 'Mirror', 'Stride',
+    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Dents', 'Rim', 'Rails', 'Roof', 'Street', 'Wet', 'MirrorPass', 'MirrorOn', 'MirrorVP', 'Mirror', 'Stride', 'Probe', 'ProbeOn', 'CabinGlass', 'SideGlass',
   ]);
-  const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage', 'Dents', 'Rim']);
+  const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage', 'Dents', 'Rim', 'Rails', 'Roof']);
   const particles = pipeline(gl, shader(particleVertex), shader(particleFragment), ['VP', 'Viewport']);
   const particleBuffer = gl.createBuffer();
   const streetUniform = new Float32Array(12);
@@ -111,6 +119,8 @@ export function createRenderer(canvas) {
   const shadow = highPrecision ? shadowTarget(gl) : null;
   const color = sceneTarget(gl);
   const mirror = sceneTarget(gl);
+  const probe = createReflectionProbe(gl);
+  const probeProjection = perspective(Math.PI / 2, 1, .35, 125);
   const blank = texture(gl);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
   const screen = gl.createBuffer();
@@ -147,23 +157,27 @@ export function createRenderer(canvas) {
     calls++;
   }
 
-  function setDeformation(pass, wasDamaged, damage = intact, dents = noDents, rim = 0) {
+  function setDeformation(pass, wasDamaged, damage = intact, dents = noDents, rim = 0, rails = intact, roof = intactRoof) {
     const active = damage !== intact || rim > 0;
     if (active || wasDamaged) {
       gl.uniform4fv(pass.Damage, damage);
+      gl.uniform4fv(pass.Rails, rails);
+      gl.uniform2fv(pass.Roof, roof);
       gl.uniform4fv(pass.Dents, dents);
       gl.uniform1f(pass.Rim, rim);
     }
     return active;
   }
 
-  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage, dents, rim, stride = 0, panes = intact }) {
+  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage, dents, rim, rails, roof, stride = 0, panes = intact, cabinGlass = false, sideGlass }) {
     gl.uniformMatrix4fv(lit.Model, false, model);
     gl.uniform3fv(lit.Tint, tint);
     gl.uniform1f(lit.Style, style);
     gl.uniform1f(lit.Emission, emission);
     if (style === MATERIAL.glass || style === MATERIAL.crackedScreen) gl.uniform4fv(lit.Pane, panes);
-    litWasDamaged = setDeformation(lit, litWasDamaged, damage, dents, rim);
+    if (sideGlass) gl.uniform3fv(lit.SideGlass, sideGlass);
+    gl.uniform1f(lit.CabinGlass, cabinGlass ? 1 : 0);
+    litWasDamaged = setDeformation(lit, litWasDamaged, damage, dents, rim, rails, roof);
     gl.uniform1f(lit.Stride, stride);
     draw(mesh, true);
   }
@@ -243,7 +257,7 @@ export function createRenderer(canvas) {
         if (qualityPass) for (const object of objects) {
           if (!object.castsShadow || (object.bounds && !intersectsFrustum(cachedLight, object.bounds))) continue;
           gl.uniformMatrix4fv(depth.Model, false, object.model);
-          depthWasDamaged = setDeformation(depth, depthWasDamaged, object.damage, object.dents, object.rim);
+          depthWasDamaged = setDeformation(depth, depthWasDamaged, object.damage, object.dents, object.rim, object.rails, object.roof);
           draw(object.mesh, false);
         }
         gl.colorMask(true, true, true, true);
@@ -258,7 +272,7 @@ export function createRenderer(canvas) {
     const reflectHeight = Math.max(1, Math.round(reflectWidth * height / width));
     const useMirror = qualityPass && wet > 0.01 && mirror.size(reflectWidth, reflectHeight);
 
-    function prepareLighting(passVP, passEye, reflected) {
+    function prepareLighting(passVP, passEye, reflected, capturing = false) {
       gl.useProgram(lit.program);
       gl.uniformMatrix4fv(lit.VP, false, passVP);
       gl.uniformMatrix4fv(lit.Light, false, light);
@@ -273,16 +287,28 @@ export function createRenderer(canvas) {
       gl.uniform1f(lit.Shadows, useShadow && !reflected ? 1 : 0);
       gl.uniform1f(lit.Texel, 1 / shadowSize);
       gl.uniform1f(lit.Wet, reflected ? 0 : wet);
-      gl.uniform1f(lit.MirrorPass, reflected ? 1 : 0);
+      gl.uniform1f(lit.MirrorPass, reflected && !capturing ? 1 : 0);
       gl.uniform1f(lit.MirrorOn, useMirror && !reflected ? 1 : 0);
       gl.uniformMatrix4fv(lit.MirrorVP, false, mirrorVP);
       gl.uniform1i(lit.Depth, 0);
       gl.uniform1i(lit.Mirror, 1);
+      gl.uniform1i(lit.Probe, 2);
+      gl.uniform1f(lit.ProbeOn, !capturing && quality !== 'performance' && probe.ready ? 1 : 0);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_CUBE_MAP, probe.texture);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, useMirror && !reflected ? mirror.image : blank);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, useShadow && !reflected ? shadow.depth : blank);
     }
+
+    if (quality !== 'performance') probe.update(focus, dusk, landscape, qualityPass ? 9 : 18, (origin, axes) => {
+      const captureVP = multiply(probeProjection, view(origin, axes));
+      drawSky(axes, 1, Math.PI / 2, sun, dusk);
+      prepareLighting(captureVP, origin, true, true);
+      drawLit({ mesh: landscape });
+      for (const chunk of chunks) if (intersectsFrustum(captureVP, chunk)) drawLit(chunk);
+    });
 
     if (useMirror && mirrorAge++ % 3 === 0) {
       const reflect = ([x, y, z]) => [x, 0.02 - y, z];

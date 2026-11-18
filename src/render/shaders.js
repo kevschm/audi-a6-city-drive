@@ -69,6 +69,8 @@ void main() {
 
 const deformation = `
 uniform vec4 uDamage;
+uniform vec4 uRails;
+uniform vec2 uRoof;
 uniform vec4 uDents[${dentLimit}];
 uniform float uRim;
 vec3 dent(vec3 p, out float distress, out vec2 normalShift) {
@@ -84,6 +86,21 @@ vec3 dent(vec3 p, out float distress, out vec2 normalShift) {
   }
   if (dot(uDamage, vec4(1.0)) < 0.0001) return p;
   vec3 moved = p;
+  float roof = mix(uRoof.x, uRoof.y, smoothstep(-0.58, 0.58, p.x));
+  float pillar = smoothstep(.91, 1.40, p.y);
+  moved.y -= roof * pillar;
+  moved.x += (uRoof.x - uRoof.y) * pillar * .29;
+  bool nose = p.z > 0.0;
+  float rail = mix(nose ? uRails.x : uRails.z, nose ? uRails.y : uRails.w, smoothstep(-0.58, 0.58, p.x));
+  float lengthWeight = smoothstep(nose ? 0.96 : 1.39, 2.39, abs(p.z));
+  float shortening = rail * lengthWeight * (1.0 - smoothstep(1.04, 1.40, p.y));
+  moved.z -= sign(p.z) * shortening;
+  float flange = smoothstep(0.63, 1.0, p.y);
+  float buckle = sin(lengthWeight * 3.14159) * rail * flange;
+  moved.y += buckle * (nose ? 0.40 : 0.22);
+  moved.x += sign(p.x) * sin(lengthWeight * 6.28) * shortening * 0.13;
+  normalShift.y -= sign(p.z) * cos(lengthWeight * 3.14159) * buckle;
+  distress = shortening * 0.9 + roof * pillar * 2.0;
   float height = 1.0 - smoothstep(0.84, 1.34, p.y);
   for (int i = 0; i < ${dentLimit}; i++) {
     vec4 hit = uDents[i];
@@ -96,7 +113,7 @@ vec3 dent(vec3 p, out float distress, out vec2 normalShift) {
     float force = hit.z * height * envelope;
     distress += force;
     float crease = 0.81 + 0.19 * sin(19.0 * dot(delta, inward.yx) + p.y * 11.0);
-    moved.xz += inward * force * envelope * crease * (bumper ? 0.55 : 0.39);
+    moved.xz += inward * force * envelope * crease * (bumper ? mix(0.55, 0.16, min(1.0, rail * 4.0)) : 0.39);
     moved.y -= force * envelope * 0.11 * sin(p.y * 8.0 + 1.5);
     if (bumper) {
       float fold = max(0.0, hit.z - 0.28) * max(0.0, 1.0 - dot(scaled * vec2(1.0, 0.73), scaled * vec2(1.0, 0.73)));
@@ -107,7 +124,7 @@ vec3 dent(vec3 p, out float distress, out vec2 normalShift) {
     normalShift -= scaled * force * envelope * 0.87;
   }
   distress = min(1.0, distress);
-  return p + clamp(moved - p, vec3(-0.50, -0.15, -0.58), vec3(0.50, 0.15, 0.58));
+  return p + clamp(moved - p, vec3(-0.50, -0.28, -0.90), vec3(0.50, 0.34, 0.82));
 }
 `;
 
@@ -169,6 +186,10 @@ uniform float uMirrorPass;
 uniform float uMirrorOn;
 uniform mat4 uMirrorVP;
 uniform sampler2D uMirror;
+uniform samplerCube uProbe;
+uniform float uProbeOn;
+uniform float uCabinGlass;
+uniform vec3 uSideGlass[2];
 varying vec3 vEyeDelta;
 varying vec3 vColor;
 varying vec3 vNormal;
@@ -302,6 +323,8 @@ void main() {
   vec3 delta = vEyeDelta;
   float d = length(delta);
   vec3 toEye = delta / max(d, 0.01);
+  if (uCabinGlass > 0.5 && dot(toEye, n) < 0.0) discard;
+  float paneOpacity = 1.0;
   bool water = vMaterial > 7.5 && vMaterial < 8.5;
   if (water) n = normalize(n + 0.028 * vec3(sin(vWorld.z * 8.5), 0.0, sin(vWorld.x * 11.0)));
   float direct = max(0.0, dot(n, uSun));
@@ -312,13 +335,38 @@ void main() {
     * mix(vec3(1.0), vec3(0.40, 0.46, 0.61), uDusk);
   vec3 sunLight = mix(vec3(1.07, 0.88, 0.67), vec3(0.74, 0.39, 0.20), uDusk);
   vec3 baseColor = max(vColor * uTint, vec3(0.0));
+  float roomLight = 0.0;
+  if (vMaterial > 6.5 && vMaterial < 7.5 && abs(n.y) < .25 && uDetail > .5) {
+    // A recessed back wall and blinds behind city windows. Project the view
+    // ray into the room so the recess moves relative to the outer mullions.
+    vec2 along = abs(n.x) > abs(n.z) ? vec2(0.0, 1.0) : vec2(1.0, 0.0);
+    float across = dot(vWorld.xz, along);
+    vec2 bay = floor(vec2(across / 2.05, (vWorld.y - .45) / 3.04));
+    float seed = hash(bay + floor(vWorld.xz * (1.0 - along)) * .37);
+    float travel = .54 / max(.23, abs(dot(n, toEye)));
+    vec2 inside = vec2(across - dot(toEye.xz, along) * travel, vWorld.y - toEye.y * travel);
+    float partition = smoothstep(.01, .095, abs(fract(inside.x / 2.05) - .5));
+    float curtain = smoothstep(.52, .72, seed) * smoothstep(.23, .43, abs(fract(inside.x / 2.05) - .5));
+    float blind = step(1.0 - seed * .44, fract((vWorld.y - .45) / 3.04));
+    float slats = mix(.83, 1.0, smoothstep(.08, .49, fract(vWorld.y * 12.0)));
+    baseColor *= mix(.68, 1.15, seed) * mix(.69, 1.0, partition);
+    baseColor = mix(baseColor, vec3(.53,.51,.44) * slats, max(curtain * .57, blind * .58));
+    roomLight = uDusk * smoothstep(.68, .85, seed) * (.14 + .45 * partition) * (1.0 - .66 * blind);
+  }
   if (uStyle > 1.5 && uStyle < 2.5 && dot(uPane, vec4(1.0)) > 0.01) {
-    float side = smoothstep(0.55, 0.82, abs(vLocal.x));
+    float windowHeight = clamp((vLocal.y - 1.05) / 0.33, 0.0, 1.0);
+    float side = uCabinGlass > 0.5 ? step(mix(-2.20, -1.87, windowHeight), vLocal.z) *
+      step(vLocal.z, mix(1.10, 0.46, windowHeight)) : smoothstep(0.55, 0.82, abs(vLocal.x));
     float severity = mix(vLocal.z > 0.15 ? uPane.x : uPane.y, vLocal.x < 0.0 ? uPane.z : uPane.w, side);
+    if (uCabinGlass > 0.5 && side > 0.5) {
+      vec3 panes = vLocal.x < 0.0 ? uSideGlass[0] : uSideGlass[1];
+      severity = vLocal.z < -1.26 ? panes.x : vLocal.z < -0.16 ? panes.y : panes.z;
+    }
     vec2 uv = vec2(mix(vLocal.x + 0.16, fract(vLocal.z * 0.8) - 0.5, side) * 2.2, (vLocal.y - 1.16) * 4.0);
     float cracks = crackPattern(uv, severity) * smoothstep(0.07, 0.32, severity);
     if (severity > 0.73 && side > 0.85 && cracks < 0.31) discard;
     baseColor = mix(baseColor, vec3(0.66, 0.74, 0.76), cracks * 0.85);
+    paneOpacity += cracks * 1.8;
   }
   if (vDistress > 0.03) {
     float scoring = noise2(vLocal.xz * vec2(33.0, 20.0) + vLocal.y * 32.0);
@@ -337,8 +385,12 @@ void main() {
   vec3 base = baseColor * baseColor;
   vec3 lit = base * (ambient + visibility * direct * sunLight) * surfaceGrain(n, d);
   if (vMaterial > 9.5 && vMaterial < 10.5) {
-    float density = noise2((vWorld.xz + vWorld.y * vec2(0.43, 0.59)) * 12.0);
-    lit *= 0.86 + 0.29 * density;
+    vec2 canopy = vWorld.xz + vWorld.y * vec2(0.43, 0.59);
+    float density = noise2(canopy * 7.2);
+    float cluster = noise2(canopy * 2.1);
+    float contour = abs(dot(toEye, n));
+    if (uDetail > 0.5 && d < 50.0 && contour < 0.35 && density + cluster * .35 < .46 - contour * .50) discard;
+    lit *= 0.68 + 0.33 * density + .25 * cluster;
     lit += base * pow(max(0.0, dot(-n, uSun)), 2.0) * vec3(0.24, 0.35, 0.13);
   }
   if (vMaterial > 10.5) {
@@ -353,6 +405,7 @@ void main() {
   }
   lit += base * headlight(n) * vec3(1.0, 0.85, 0.66);
   lit += base * streetLight(n) * vec3(1.0, 0.72, 0.39);
+  lit += roomLight * vec3(.70, .44, .21);
 
   bool paint = uStyle > 0.5 && uStyle < 1.5;
   bool glass = (uStyle > 1.5 && uStyle < 2.5) || (vMaterial > 6.5 && vMaterial < 7.5);
@@ -369,6 +422,21 @@ void main() {
       surroundings += vec3(0.30, 0.34, 0.40) * smoothstep(0.52, 0.78, cloud) * smoothstep(0.03, 0.5, reflectedDir.y);
     }
     vec3 glossy = surroundings * surroundings;
+    if (uProbeOn > 0.5 && uStyle > 0.5 && (paint || glass || metal || lens)) {
+      vec3 capture = textureCube(uProbe, reflectedDir).rgb;
+      glossy = mix(glossy, capture * capture, 0.88 - 0.34 * vDistress);
+    }
+    if (paint) {
+      fresnel = (0.082 + 0.79 * edge) * (1.0 - 0.53 * vDistress);
+      roughness += vDistress * 0.26;
+    }
+    if (uCabinGlass > 0.5) {
+      float coat = 0.08 + 0.84 * edge;
+      float alpha = clamp(0.29 + coat * 0.67 + (paneOpacity - 1.0) * 0.47, 0.0, 1.0);
+      lit = base * (0.51 + sky * 0.16) + glossy * (coat / alpha);
+      paneOpacity = alpha;
+      fresnel = 0.0;
+    }
     float shine = max(0.0, dot(normalize(uSun + toEye), n));
     lit = lit * (1.0 - fresnel * 0.78) + glossy * fresnel;
     lit += sunLight * pow(shine, 2.0 / (roughness * roughness)) * visibility * direct * (metal ? 0.75 : 0.37);
@@ -399,7 +467,7 @@ void main() {
     }
     rgb = mix(rgb * (1.0 - moisture * 0.28), reflected, clamp(strength, 0.0, 0.74));
   }
-  gl_FragColor = vec4(rgb + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+  gl_FragColor = vec4(rgb + (hash(gl_FragCoord.xy) - 0.5) / 255.0, clamp(paneOpacity, 0.0, 1.0));
 }
 `;
 
@@ -463,8 +531,17 @@ void main() {
 export const particleFragment = `
 precision highp float;
 varying vec2 vAppearance;
+${noise}
 void main() {
-  float radial = length(gl_PointCoord * 2.0 - 1.0);
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float age = 1.0 - vAppearance.x;
+  float radial = length(p);
+  if (vAppearance.y < 0.78) {
+    float eddy = noise2(p * 3.0 + vec2(age * 2.1, -age));
+    radial = radial * (0.80 + eddy * 0.40) + (noise2(p * 6.8 + eddy) - 0.5) * 0.24;
+  } else if (vAppearance.y < 0.92) {
+    radial = max(abs(p.x + p.y * .45) * 1.7, abs(p.y) * .96);
+  }
   float edge = 1.0 - smoothstep(0.13, 1.0, radial);
   float spark = step(0.92, vAppearance.y);
   float shard = step(0.78, vAppearance.y) * (1.0 - spark);

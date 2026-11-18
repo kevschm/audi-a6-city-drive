@@ -87,7 +87,18 @@ function bodySection(z) {
   if (right < 0) return stations.at(-1);
   if (!right) return stations[0];
   const left = stations[right - 1], end = stations[right];
-  return pointBetween(left, end, (z - left[0]) / (end[0] - left[0]));
+  const span = end[0] - left[0], t = (z - left[0]) / span;
+  const before = stations[Math.max(0, right - 2)], after = stations[Math.min(stations.length - 1, right + 1)];
+  // Shape-preserving Hermite loft. Flatten the tangent at a local maximum
+  // instead of overshooting the surveyed section or kinking the highlight.
+  const tangent = (a, b) => a * b <= 0 ? 0 : 2 * a * b / (a + b);
+  return left.map((value, i) => {
+    if (!i) return z;
+    const secant = (end[i] - value) / span;
+    const m0 = before === left ? secant : tangent((value - before[i]) / (left[0] - before[0]), secant);
+    const m1 = after === end ? secant : tangent(secant, (after[i] - end[i]) / (after[0] - end[0]));
+    return lerp(value, end[i], t * t * (3 - 2 * t)) + span * t * (1 - t) * ((1 - t) * m0 - t * m1);
+  });
 }
 
 function wheelOpening(z) {
@@ -101,7 +112,10 @@ function flankPoint(side, z, y) {
   const widestY = .735;
   const width = y <= widestY ? lerp(sill, flank, 1 - (1 - (y - sillHeight) / (widestY - sillHeight)) ** 1.55)
     : lerp(flank, shoulder, ((y - widestY) / (shoulderY - widestY)) ** 1.35);
-  return [side * width, y, z];
+  const axleDistance = Math.min(Math.hypot(z - AVANT_WHEELS.front, y - AVANT_WHEELS.radius),
+    Math.hypot(z - AVANT_WHEELS.rear, y - AVANT_WHEELS.radius));
+  const lip = .019 * Math.exp(-((axleDistance - archRadius - .032) ** 2) / .0028);
+  return [side * (width + lip), y, z];
 }
 
 function bodyPoint(side, z, y) {
@@ -122,11 +136,15 @@ function flankTrace(mesh, side, points, width, color) {
 
 function deckPoint(side, z, fraction) {
   const [, , , width, height, crown] = bodySection(z);
-  return [side * width * fraction, crown - (crown - height) * Math.abs(fraction) ** 2.1, z];
+  const ridge = Math.exp(-((Math.abs(fraction) - .72) ** 2) / .013);
+  const hood = Math.max(0, Math.min(1, (z - .92) * 3, (2.39 - z) * 7));
+  return [side * width * fraction, crown - (crown - height) * Math.abs(fraction) ** 2.1 + .023 * ridge * hood, z];
 }
 
 function buildShell(body, paint, components) {
   const longitudinal = stations.map(station => station[0]);
+  longitudinal.push(-2.23, 1.115);
+  for (let z = -2.28; z < 2.34; z += .095) longitudinal.push(z);
   for (const axle of [AVANT_WHEELS.rear, AVANT_WHEELS.front]) {
     for (let step = 0; step <= 16; step++) longitudinal.push(axle - archRadius * Math.cos(Math.PI * step / 16));
     longitudinal.push(axle - archRadius + .001, axle + archRadius - .001);
@@ -142,8 +160,8 @@ function buildShell(body, paint, components) {
       const lowA = wheelOpening(za), lowB = wheelOpening(zb);
       const flank = (z, y) => flankPoint(side, z, y);
       const flankNormal = ([, y, z]) => surfaceNormal(flank, z, y, out);
-      const levelsA = [lowA, lerp(lowA, crease, .52), crease, lerp(crease, ya, .55), ya];
-      const levelsB = [lowB, lerp(lowB, crease, .52), crease, lerp(crease, yb, .55), yb];
+      const levelsA = [lowA, lerp(lowA, crease, .12), lerp(lowA, crease, .52), crease, lerp(crease, ya, .55), ya];
+      const levelsB = [lowB, lerp(lowB, crease, .12), lerp(lowB, crease, .52), crease, lerp(crease, yb, .55), yb];
       for (let level = 1; level < levelsA.length; level++) {
         panel(paint, out, lacquer, [flank(za, levelsA[level - 1]), flank(zb, levelsB[level - 1]),
           flank(zb, levelsB[level]), flank(za, levelsA[level])], flankNormal);
@@ -155,7 +173,7 @@ function buildShell(body, paint, components) {
       const up = [0, 1, 0];
       const deck = (z, fraction) => deckPoint(side, z, fraction);
       const deckNormal = ([x, , z]) => surfaceNormal(deck, z, Math.abs(x) / bodySection(z)[3], up);
-      const fractions = [0, .32, .59, .82, 1];
+      const fractions = za >= -2.23 && zb <= 1.115 ? [.92, 1] : [0, .32, .56, .67, .72, .79, .91, 1];
       for (let strip = 1; strip < fractions.length; strip++) {
         const from = fractions[strip - 1], to = fractions[strip];
         panel(paint, up, paintEdge, [deck(za, from), deck(zb, from), deck(zb, to), deck(za, to)], deckNormal);
@@ -176,7 +194,8 @@ function buildShell(body, paint, components) {
     // Keep enough vertices across both ends for a dent to follow an offset hit.
     for (let i = -5; i < 5; i++) {
       const a = i / 5, b = (i + 1) / 5;
-      for (const [lower, upper] of [[0, 0.46], [0.46, 0.76], [0.76, 1]]) {
+      for (const [lower, upper] of [[0, .13], [.13, .46], [.46, .76], [.76, 1]]) {
+        if (end > 0 && i >= -4 && i < 4 && lower >= .13 && upper <= .76) continue;
         face(paint, out, lacquer, nose(a, lower), nose(b, lower), nose(b, upper), nose(a, upper));
       }
       face(paint, out, paintEdge, nose(a, 1), nose(b, 1), [b * topWidth, lerp(top, crown, 1 - Math.abs(b)), z],
@@ -186,6 +205,15 @@ function buildShell(body, paint, components) {
       face(body, [side, 0, 0], seal, [side * low, sillHeight, sillZ], [side * low, sillHeight, z], [side * topWidth, top, z]);
     }
     const part = components?.[end > 0 ? 0 : 1];
+    if (end > 0) {
+      const core = rgb(59,62,59);
+      body.box(-.57,.293,2.22,.57,.747,2.243,seal);
+      for (let row = 0; row < 17; row++) {
+        const y = .31 + row * .026;
+        body.box(-.54,y,2.244,.54,y + .009,2.250,core);
+      }
+      for (const x of [-.55,-.27,0,.27,.55]) body.box(x-.012,.30,2.25,x+.012,.746,2.266,molding);
+    }
     face(body, out, rgb(46, 48, 49), [-.66, .449, end * 2.375], [.66, .449, end * 2.375],
       [.65, .559, end * 2.379], [-.65, .559, end * 2.379]);
     for (const x of [-.44, .44]) body.box(x - .068, .415, end * 2.365 - .012, x + .068, .570, end * 2.365 + .012, rgb(96, 99, 94));
@@ -216,17 +244,34 @@ function buildShell(body, paint, components) {
 }
 
 function bumper(paint, body, end) {
-  const out = [0, 0, end];
   // The section steps back at the ends so the bumpers wrap onto both quarters.
-  const edge = [[-.862, 2.255], [-.820, 2.327], [-.675, 2.398], [-.530, 2.412], [-.35, 2.412],
-    [-.18, 2.412], [0, 2.412], [.18, 2.412], [.35, 2.412], [.530, 2.412], [.675, 2.398], [.820, 2.327], [.862, 2.255]];
+  const archEnd = end > 0 ? 1.77 : 1.68;
+  const quarter = [[.864, archEnd], [.873, archEnd + .11], [.866, 2.09], [.851, 2.235], [.817, 2.314],
+    [.755, 2.366], [.675, 2.398], [.530, 2.412], [.35, 2.412], [.18, 2.412]];
+  const edge = [...quarter.map(([x,z]) => [-x,z]), [0,2.412], ...quarter.slice().reverse()];
+  const normals = edge.map((p, i) => {
+    const a = edge[Math.max(0, i - 1)], b = edge[Math.min(edge.length - 1, i + 1)];
+    const nx = a[1] - b[1], nz = b[0] - a[0], len = Math.hypot(nx,nz);
+    return [nx / len, end * nz / len];
+  });
   for (let i = 1; i < edge.length; i++) {
-    const [xa, za] = edge[i - 1], [xb, zb] = edge[i];
-    const a = (y, inset = 0) => [xa, y, end * (za - inset)];
-    const b = (y, inset = 0) => [xb, y, end * (zb - inset)];
-    face(paint, out, lacquer, a(.42), b(.42), b(.625), a(.625));
+    const rail = (index, y, inset) => [edge[index][0] - normals[index][0] * inset, y, end * edge[index][1] - normals[index][1] * inset];
+    const a = (y, inset = 0) => rail(i - 1, y, inset);
+    const b = (y, inset = 0) => rail(i, y, inset);
+    const out = [normals[i-1][0] + normals[i][0], 0, normals[i-1][1] + normals[i][1]];
+    const section = [[.389, .034], [.414, .009], [.45, -.004], [.51, -.010], [.57, -.006], [.625, .003]];
+    for (let j = 1; j < section.length; j++) {
+      const [lo, d0] = section[j - 1], [hi, d1] = section[j];
+      const round = ([x, y, z]) => {
+        const dist = k => Math.hypot(x - edge[k][0], z - end * edge[k][1]);
+        const [nx, nz] = normals[dist(i) < dist(i-1) ? i : i-1];
+        const ny = (y - .51) * 3.6, len = Math.hypot(nx, ny, nz);
+        return [nx / len, ny / len, nz / len];
+      };
+      panel(paint, out, lacquer, [a(lo, d0), b(lo, d0), b(hi, d1), a(hi, d1)], round);
+    }
     face(body, out, molding, a(.586, -.003), b(.586, -.003), b(.639, -.003), a(.639, -.003));
-    face(body, [0, -1, 0], rubber, a(.42), b(.42), b(.347, .048), a(.347, .048));
+    face(body, [0, -1, 0], rubber, a(.389, .034), b(.389, .034), b(.347, .048), a(.347, .048));
     face(paint, [0, 1, 0], paintEdge, a(.639), b(.639), b(.656, .095), a(.656, .095));
   }
 }
@@ -244,7 +289,7 @@ const cabinLine = [
 
 function cabinPoint(side, section, height, offset = 0) {
   const [z0, z1, y0, y1, w0, w1] = section;
-  return [side * (lerp(w0, w1, height) + offset), lerp(y0, y1, height), lerp(z0, z1, height)];
+  return [side * (lerp(w0, w1, height) + .017 * Math.sin(Math.PI * height) + offset), lerp(y0, y1, height), lerp(z0, z1, height)];
 }
 
 function buildCabin(body, paint, glass, brightwork, components) {
@@ -252,7 +297,9 @@ function buildCabin(body, paint, glass, brightwork, components) {
     const a = cabinLine[i - 1], b = cabinLine[i];
     for (const side of sides) {
       const out = [side, .37, 0];
-      face(paint, out, lacquer, cabinPoint(side, a, 0), cabinPoint(side, b, 0), cabinPoint(side, b, 1), cabinPoint(side, a, 1));
+      for (const [lo, hi] of [[0, .12], [.85, 1]]) {
+        face(paint, out, lacquer, cabinPoint(side, a, lo), cabinPoint(side, b, lo), cabinPoint(side, b, hi), cabinPoint(side, a, hi));
+      }
       const roof = (section, fraction) => {
         const [, z, , y, , width] = section;
         return [side * width * fraction, y + .035 * (1 - fraction ** 6.3), z];
@@ -278,16 +325,22 @@ function buildCabin(body, paint, glass, brightwork, components) {
       // The pillars are placed by cross-section interpolation so window edges follow the body.
       const p0 = (i, f) => pointBetween(cabinLine[i], cabinLine[i + 1], f);
       const start = p0(first, insetA), end = p0(last - 1, 1 - insetB);
+      for (const [a, b] of [[cabinLine[first], start], [end, cabinLine[last]]]) {
+        face(paint, out, lacquer, cabinPoint(side, a, .10), cabinPoint(side, b, .10), cabinPoint(side, b, .89), cabinPoint(side, a, .89));
+      }
       const sections = [start, ...cabinLine.slice(first + 1, last), end];
       for (let i = 1; i < sections.length; i++) {
         const a = sections[i - 1], b = sections[i];
         const f = (s, height, offset = .004) => cabinPoint(side, s, height, offset);
         const trim = [f(a, .082), f(b, .082), f(b, .887), f(a, .887)];
-        face(body, out, seal, ...trim);
+        trace(body, trim.slice(0, 2), .014, out, seal);
+        trace(body, trim.slice(2), .014, out, seal);
+        if (i === 1) trace(body, [trim[0], trim[3]], .018, out, seal);
+        if (i === sections.length - 1) trace(body, [trim[1], trim[2]], .018, out, seal);
         const windowPoint = (s, f, height) => cabinPoint(side, pointBetween(s, f, .011), height, .007);
         const left = i === 1 ? b : a, right = i === sections.length - 1 ? a : b;
         face(glass, out, blackGlass, windowPoint(a, left, .121), windowPoint(b, right, .121), windowPoint(b, right, .57), windowPoint(a, left, .57));
-        face(glass, out, glassTop, windowPoint(a, left, .57), windowPoint(b, right, .57), windowPoint(b, right, .855), windowPoint(a, left, .855));
+        face(glass, out, blackGlass, windowPoint(a, left, .57), windowPoint(b, right, .57), windowPoint(b, right, .87), windowPoint(a, left, .87));
         trace(brightwork, [f(a, .074, .008), f(b, .074, .008)], .011, out, nickel);
         trace(body, [f(a, .92, .005), f(b, .92, .005)], .012, out, molding);
       }
@@ -344,18 +397,25 @@ function buildWindscreen(body, paint, glass, end) {
   const rows = [-1, -.91, -.55, 0, .55, .91, 1];
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1], b = rows[i];
-    face(paint, out, lacquer, at(a, 0), at(b, 0), at(b, 1), at(a, 1));
+    const pillar = i === 1 || i === rows.length - 1;
+    for (const [lo, hi] of pillar ? [[0, 1]] : [[0, .10], [.89, 1]]) {
+      face(paint, out, lacquer, at(a, lo), at(b, lo), at(b, hi), at(a, hi));
+    }
     face(paint, [0, 1, 0], paintEdge, at(a, 1), at(b, 1),
       [at(b, 1)[0], station[3] + .033 * (1 - b * b), station[1]], [at(a, 1)[0], station[3] + .033 * (1 - a * a), station[1]]);
     if (i === 1 || i === rows.length - 1) continue;
-    face(body, out, seal, at(a, .059, .005), at(b, .059, .005), at(b, .925, .005), at(a, .925, .005));
-    face(glass, out, blackGlass, at(a, .095, .010), at(b, .095, .010), at(b, .51, .010), at(a, .51, .010));
-    face(glass, out, glassTop, at(a, .51, .010), at(b, .51, .010), at(b, .891, .010), at(a, .891, .010));
+    for (const h of [.096, .89]) trace(body, [at(a, h, .009), at(b, h, .009)], .010, out, seal);
+    const normalAt = point => {
+      const h = (point[1] - .010 - station[2]) / (station[3] - station[2]);
+      const width = lerp(station[4], station[5], h);
+      return surfaceNormal((x, y) => at(x, y, .010), point[0] / width, h, out);
+    };
+    panel(glass, out, blackGlass, [at(a, .095, .010), at(b, .095, .010), at(b, .891, .010), at(a, .891, .010)], normalAt);
   }
   if (end < 0) {
     for (const h of [.22, .34, .46, .58, .70, .82]) {
       const tint = h < .51 ? rgb(48, 56, 60) : rgb(73, 84, 91);
-      trace(glass, rows.slice(1, -1).map(x => at(x, h, .018)), .004, out, tint);
+      trace(body, rows.slice(1, -1).map(x => at(x, h, .018)), .0023, out, tint);
     }
     trace(body, [at(.065, .084, .018), at(.11, .237, .018), at(-.56, .305, .018)], .016, out, seal);
   } else {
@@ -623,10 +683,62 @@ function buildWheel(wheel) {
   }
 }
 
+// Geometry visible through the exterior glazing, batched with the trim.
+// The cabin floor, seats and head restraints occlude the far-side windows.
+function passengerCompartment(mesh) {
+  const upholstery = rgb(60, 60, 57), seam = rgb(39, 41, 41), cloth = rgb(75, 74, 69);
+  mesh.box(-.71, .208, -2.20, .71, .285, 2.22, rgb(48, 49, 46));
+  for (const side of sides) {
+    const x = side * .56;
+    mesh.box(x - .055, .177, -1.87, x + .055, .215, 1.96, rgb(62, 63, 59));
+    for (const z of [AVANT_WHEELS.front, AVANT_WHEELS.rear]) {
+      sweep(mesh, [[side * .29,.205,z - .22],[side * .72,.25,z]], .036, 6, rgb(65,66,62));
+      const hub = (a, r, x) => [side * x, .315 + r * Math.cos(a), z + r * Math.sin(a)];
+      for (let i = 0; i < 16; i++) {
+        const a = i * tau / 16, b = (i + 1) * tau / 16;
+        face(mesh, [side,0,0], nickel, hub(a,.129,.775), hub(b,.129,.775), hub(b,.061,.78), hub(a,.061,.78));
+        face(mesh, [side,0,0], molding, hub(a,.061,.78), hub(b,.061,.78), hub(0,0,.80));
+      }
+    }
+  }
+  sweep(mesh, [[.09,.181,1.43],[.09,.17,.2],[-.29,.17,-.88],[-.50,.20,-1.75],[-.56,.28,-2.30]], .041, 8, rgb(118,112,97));
+  mesh.box(-.69,.15,-2.06,-.34,.262,-1.55,rgb(116,111,97));
+  mesh.box(-.77, .50, -2.20, .77, .59, 1.15, seam);
+  mesh.box(-.73, .88, -2.20, .73, .96, -1.20, molding);
+  mesh.box(-.75, .84, .60, .75, 1.036, 1.12, rgb(46, 48, 46));
+  for (const side of sides) {
+    mesh.box(side < 0 ? -.80 : .73, .59, -2.18, side < 0 ? -.73 : .80, 1.04, .94, molding);
+    for (const [x, z, rear] of [[side * .389, .02, false], [side * .36, -1.03, true]]) {
+      const pad = (cx, cy, cz, w, h, thick, fill) => {
+        const outline = [[-.78,-1],[.78,-1],[1,-.75],[.94,.70],[.70,1],[-.70,1],[-.94,.70],[-1,-.75]];
+        const vertex = (i, face) => {
+          const [u,v] = outline[i];
+          return [cx + w * u, cy + h * v, cz - v * h * .20 + face * thick];
+        };
+        for (let i = 0; i < outline.length; i++) {
+          const j = (i + 1) % outline.length;
+          for (const end of sides) face(mesh, [0,0,end], fill, [cx,cy,cz + end * (thick + .014)], vertex(i,end), vertex(j,end));
+          face(mesh, [outline[i][0],outline[i][1],0], seam, vertex(i,-1), vertex(j,-1), vertex(j,1), vertex(i,1));
+        }
+      };
+      pad(x, .916, z, rear ? .342 : .267, .205, .065, upholstery);
+      for (const dx of [-.064, .064]) mesh.box(x + dx - .009, 1.105, z - .054, x + dx + .009, 1.19, z - .035, nickel);
+      pad(x, rear ? 1.169 : 1.217, z - .056, .137, .071, .058, cloth);
+    }
+  }
+  const rim = Array.from({ length: 21 }, (_, i) => {
+    const a = tau * i / 20;
+    return [-.39 + .16 * Math.cos(a), .974 + .143 * Math.sin(a), .49 + .055 * Math.sin(a)];
+  });
+  sweep(mesh, rim, .017, 6, rubber);
+  mesh.box(-.47, .942, .48, -.31, 1.005, .505, seal);
+}
+
 export function buildAvant(parts, components) {
   const { body, paint, glass, brightwork, wheel } = parts;
   buildShell(body, paint, components);
   buildCabin(body, paint, glass, brightwork, components);
+  passengerCompartment(body);
   buildLighting(parts, components?.[0]);
   buildWheel(wheel);
 }

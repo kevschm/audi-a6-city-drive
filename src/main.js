@@ -4,6 +4,8 @@ import { createVehicleState, stepVehicle, vehicleOverlapsTraffic } from './simul
 import { stepTrafficWrecks } from './simulation/vehicle-collision.js';
 import { damageAreas, wheelNames } from './simulation/vehicle-damage.js';
 import { createPropWorld } from './simulation/rigid-props.js';
+import { stepRollover, tripHeight } from './simulation/rollover.js';
+import { createLabRecording } from './simulation/lab-recording.js';
 import { createCrashScenario, testScenarios } from './simulation/crash-lab.js';
 import { stepPedestrianRigs } from './simulation/ragdoll.js';
 import { createTimeTrial, formatTrialTime } from './simulation/time-trial.js';
@@ -12,7 +14,7 @@ import { makeTraffic } from './world/traffic.js';
 import { makeWalkers } from './world/walkers.js';
 import { clamp, lerp, mixAngle } from './render/math.js';
 import { Mesh } from './render/mesh.js';
-import { createRenderer, GRAPHICS } from './render/renderer.js?drive-090';
+import { createRenderer, GRAPHICS } from './render/renderer.js?drive-0100';
 import { createImpactEffects } from './render/impact-effects.js';
 import { buildVehicles } from './render/vehicles.js';
 import { createActorModels } from './render/city-actors.js';
@@ -174,7 +176,7 @@ function boot() {
 
   function draw(dt, interpolation = 1) {
     const active = lab?.world ?? world;
-    for (const field of ['damage', 'dents', 'wheelDamage', 'axleDamage', 'glass', 'detached']) visible[field] = car[field];
+    for (const field of ['damage', 'dents', 'wheelDamage', 'axleDamage', 'glass', 'sideGlass', 'detached', 'lostWheels', 'railCrush', 'roofCrush', 'lateralTest']) visible[field] = car[field];
     visible.rpm = car.rpm;
     for (const field of ['brakeLights', 'reverseLights']) visible[field] = car[field];
     for (const field of visualFields) visible[field] = lerp(previous[field], car[field], interpolation);
@@ -185,7 +187,8 @@ function boot() {
     wet = lerp(wet, active.wetness, 1 - Math.exp(-dt * 3.2));
     if (Math.abs(wet - active.wetness) < 0.004) wet = active.wetness;
     const cockpit = !trackCamera && cameraMode === COCKPIT_MODE;
-    const view = trackCamera && lab ? { eye: [-10.2, 3.7, 13.4],
+    const view = trackCamera && car.lateralTest ? { eye: [4.5, 2.9, -11], target: [visible.x * .78, .92, 0], fov: .87 } :
+      trackCamera && lab ? { eye: [-10.2, 3.7, 13.4],
       target: [clamp(visible.x, -4, 4), 0.82, clamp(visible.z, -12, 13)], fov: 52 * Math.PI / 180 } :
       camera.update(visible, cameraMode, dt, active.obstacles, orbit);
     if (!trackCamera && motion && impactShake > 0.004) {
@@ -227,7 +230,7 @@ function boot() {
     if (!runningGear.hidden) {
       const corner = car.wheelDamage.indexOf(wheel);
       const label = wheel >= axle ? wheelNames[corner] : car.axleDamage[0] >= car.axleDamage[1] ? 'Vorderachse' : 'Hinterachse';
-      runningGear.textContent = label;
+      runningGear.textContent = wheel >= axle && (car.lostWheels & (1 << corner)) ? label + ' abgerissen' : label;
     }
     const active = lab?.world ?? world;
     const location = lab ? 'Crashlabor' : districtAt(car.x, car.z);
@@ -235,14 +238,22 @@ function boot() {
     $('leftSignal').classList.toggle('lit', signal < 0 && signalTime % 0.72 < 0.39);
     $('rightSignal').classList.toggle('lit', signal > 0 && signalTime % 0.72 < 0.39);
     if (lab) {
+      $('replayLab').disabled = lab.tape.length === 0;
+      $('replayLab').textContent = lab.playback && lab.tape.finished ? 'Erneut abspielen' : 'Replay';
+      $('replayLab').setAttribute('aria-pressed', String(lab.playback));
       $('labValues').hidden = !lab.impact;
-      $('labStatus').textContent = lab.impact ? (car.mechanical.stalled ? 'Motor ausgefallen' :
+      $('labStatus').textContent = car.lateralTest ? (Math.max(...car.roofCrush) > .005 ?
+        'Dachstauchung · ' + Math.round(Math.max(...car.roofCrush) * 100) + ' cm' :
+        Math.abs(car.roll) > .35 ? 'Wankwinkel · ' + Math.round(car.roll * 180 / Math.PI) + '°' : 'Querschlitten') :
+        lab.impact ? (car.mechanical.stalled ? 'Motor ausgefallen' :
         car.mechanical.temperature > 110 ? 'Motor überhitzt' : 'Stärkster Kontakt · ' + damageAreas[lab.impact.area]) :
         lab.dummies.some(actor => actor.rig) ? 'Dummy in Bewegung' : 'Anfahrt';
       if (lab.impact) {
         $('hitSpeed').textContent = rpmFormat.format(lab.impact.impactSpeed * 3.6) + ' km/h';
         $('hitAngle').textContent = rpmFormat.format(lab.impact.angle) + '°';
         $('hitEnergy').textContent = distanceFormat.format(lab.impact.energy / 1000) + ' kJ';
+        const rails = lab.impact.railDepths;
+        $('hitRails').textContent = rails ? rails.map(d => Math.round(d * 100)).join(' / ') + ' cm' : '–';
         $('hitG').textContent = distanceFormat.format(lab.impact.stepG) + ' g';
       }
     } else {
@@ -262,8 +273,12 @@ function boot() {
     rememberPose();
     const active = lab?.world ?? world;
     const props = lab?.props ?? cityProps;
+    if (lab?.playback) {
+      if (!lab.tape.next(input, active)) return;
+    } else if (lab) lab.tape.record(input, active.wetness);
     if (!lab) traffic.step(dt, car, vehicleOverlapsTraffic, roadHalfWidth, active.props);
-    stepVehicle(car, input, dt, active);
+    if (car.lateralTest) stepRollover(car, dt);
+    else stepVehicle(car, input, dt, active);
     stepTrafficWrecks(active.traffic, dt, active);
     props.step(dt);
     if (lab) stepPedestrianRigs(lab.dummies, dt, previous, car, active.groundHeightAt, active.obstacles, active.props);
@@ -287,7 +302,7 @@ function boot() {
       impactShake = Math.min(2.0, car.impact.deltaV / 8);
       if (car.impact.change > 0.09) {
         const region = car.impact.wheelChange >= 0.10 ? wheelNames[car.impact.wheel] : damageAreas[car.impact.area];
-        notify('Aufprall · ' + region);
+        notify('Aufprall · ' + (car.impact.roof ? 'Dachkante' : region));
       }
       if (audioEnabled) audio.impact(car.impact);
       collisionAt = time;
@@ -502,12 +517,14 @@ function boot() {
     $('game').classList.toggle('cockpit-view', !value && cameraMode === COCKPIT_MODE);
   }
 
-  function startLab(selection, kmh) {
+  function startLab(selection, kmh, recording) {
     const setup = createCrashScenario(selection, kmh);
-    const ground = () => 0;
+    const lateral = setup.spawn.lateralTest;
+    const ground = x => lateral && x >= 0 ? tripHeight : 0;
     const props = createPropWorld(ground, setup.obstacles, 52);
     props.reset(setup.props);
-    lab = { ...setup, props, selection, kmh, chunks: labModels.chunks(setup.obstacles),
+    recording?.rewind();
+    lab = { ...setup, props, selection, kmh, tape: recording ?? createLabRecording(), playback: Boolean(recording), chunks: labModels.chunks(setup.obstacles, lateral),
       world: { groundHeightAt: ground, obstacles: setup.obstacles, traffic: setup.traffic, props: props.bodies, bounds: 52, wetness: world.wetness } };
     $('labName').textContent = setup.label;
     $('game').classList.add('lab-active');
@@ -519,6 +536,7 @@ function boot() {
     if (labMenuOpen) {
       setSlowMotion(false);
       selectCamera(1, false);
+      if (lateral) setTrackCamera(true);
       closeLabMenu();
     }
     renderer.invalidateShadows();
@@ -542,6 +560,9 @@ function boot() {
   for (const [scenario, spec] of Object.entries(testScenarios)) $('labScenario').add(new Option(spec.label, scenario));
   $('labSpeed').addEventListener('input', event => { $('labSpeedValue').value = event.currentTarget.value + ' km/h'; });
   $('labBtn').addEventListener('click', openLabMenu);
+  $('replayLab').addEventListener('click', () => {
+    if (lab?.tape.length) startLab(lab.selection, lab.kmh, lab.tape);
+  });
   $('closeLab').addEventListener('click', closeLabMenu);
   $('beginLab').addEventListener('click', () => startLab($('labScenario').value, Number($('labSpeed').value)));
   $('exitLab').addEventListener('click', leaveLab);
@@ -644,6 +665,13 @@ function boot() {
   updateHud();
   draw(0.016);
   buttons.start.disabled = false;
+  let warmupFrames = 6;
+  function finishPreview() {
+    if (started || failed || document.hidden) return;
+    draw(0);
+    if (--warmupFrames > 0) requestAnimationFrame(finishPreview);
+  }
+  requestAnimationFrame(finishPreview);
   buttons.start.textContent = 'Motor starten';
 }
 

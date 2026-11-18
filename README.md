@@ -31,9 +31,11 @@ Für die Bahnhofsrunde vom Startplatz aus durch das erste Tor fahren und den gol
 
 ## Crashlabor
 
-Über „Crashlabor“ ein Szenario und ein Starttempo zwischen 10 und 130 km/h wählen. Es gibt Frontal-, Heck- und versetzte Treffer, einen seitlichen Treffer am Testfahrzeug, eine Kettenkollision, lose Gegenstände und einen Dummy. Die Fahrt beginnt mit dem gewählten Tempo. Gas, Bremse und Lenkung bleiben aktiv. „Streckenkamera“ beobachtet den Kontakt von außen. Die Zeitlupe verlangsamt die Simulationsuhr auf 0,28×, während einzelne Physikschritte weiterhin 1⁄60 Sekunde simulieren. „Reset“ wiederholt denselben Test mit repariertem Fahrzeug und frischen Hindernissen.
+Über „Crashlabor“ ein Szenario und ein Starttempo zwischen 10 und 130 km/h wählen. Es gibt Frontal-, Heck- und versetzte Treffer, einen seitlichen Treffer am Testfahrzeug, eine Kettenkollision, lose Gegenstände, einen Dummy, einen seitlichen Pfostentreffer am Rad und den Bordstein-Kippversuch. Die Fahrt beginnt mit dem gewählten Tempo. Beim Bordsteinversuch startet der Audi auf einem Querschlitten mit blockierten Rädern. In den Fahrversuchen bleiben Gas, Bremse und Lenkung aktiv. „Streckenkamera“ beobachtet den Kontakt von außen. Die Zeitlupe verlangsamt die Simulationsuhr auf 0,28×, während einzelne Physikschritte weiterhin 1⁄60 Sekunde simulieren. „Reset“ wiederholt denselben Test mit repariertem Fahrzeug und frischen Hindernissen.
 
-Die Anzeige behält den Kontakt mit dem größten berechneten normalen Energieverlust. Geschwindigkeit bezieht sich auf den Audi vor dem Stoß. Winkel bezieht sich auf die Kontaktnormale. Das Schrittmittel in g ist der Betrag der impulsbedingten Geschwindigkeitsänderung geteilt durch 1⁄60 Sekunde. Für eine Crash-Puls-Kurve mit realen Spitzenwerten wären Verformungs- und Sensordaten erforderlich. Teileversagen, Motorschaden und Bruchschwellen sind Spielmodelle.
+„Replay“ spielt bis zu 30 Sekunden aufgezeichneter Fahrbefehle und Fahrbahnbedingungen mit demselben festen Zeitschritt erneut ab. Kamera und Zeitlupe lassen sich dabei bedienen. Am Ende bleibt das Bild für die Inspektion stehen. Mit Reset beginnt eine neue Aufnahme.
+
+Die Anzeige behält den Kontakt mit dem größten berechneten normalen Energieverlust. Geschwindigkeit bezieht sich auf den Audi vor dem Stoß. Winkel bezieht sich auf die Kontaktnormale. Das Schrittmittel in g ist der Betrag der impulsbedingten Geschwindigkeitsänderung geteilt durch 1⁄60 Sekunde. Für eine Crash-Puls-Kurve mit realen Spitzenwerten wären Verformungs- und Sensordaten erforderlich. Die Stauchung L/R gibt die modellierte bleibende Verkürzung der beiden Längsträger am betroffenen Fahrzeugende in Zentimetern an. Die Aufteilung folgt der Kontaktbreite und ihrer Lage. Die Kennlinien und Bruchschwellen sind für das Spiel abgestimmt.
 
 ## Lokal entwickeln
 
@@ -53,7 +55,7 @@ node ../scripts/serve.mjs
 ```
 
 Der Browser-Smoke-Test benötigt Node.js 22 oder neuer und Chromium. Unter Windows verwendet er standardmäßig Edge. Mit `BROWSER_BIN` kann der Browserpfad und mit `BROWSER_ANGLE=d3d11` auf Windows der Grafikpfad für eine separate Hardwareprüfung gesetzt werden. Der Standard verwendet SwiftShader. Der Test bedient die gebaute Seite mit Tastatur und emuliertem Mehrfingertouch.
-Mit `GAME_URL` prüft derselbe Test eine Veröffentlichung. Er erwartet die Versionsnummer aus `package.json`.
+Mit `GAME_URL` prüft derselbe Test eine Veröffentlichung. Er erwartet die Versionsnummer aus `package.json`. Mit `VISUAL_COMPARE=1` und einem bestehenden Ordner in `SCREENSHOT_DIR` erzeugt er reproduzierbare Front-, Heck- und Schadensansichten bei festen Kamerapositionen. Falls der Treiber WebGL-Timer-Abfragen unterstützt, protokolliert er auch die GPU-Zeit der Schadensansicht.
 
 ```sh
 npm run test:browser
@@ -61,7 +63,7 @@ npm run test:browser
 
 ## Architektur
 
-- `src/render/` enthält den WebGL-Renderer, prozedurale Oberflächen, spiegelnde Materialien, Tag- und Abendlicht, die Fahrzeuggeometrie und die Grafikstufen. Performance reduziert Pixelbudget und Sichtweite. Balanced ergänzt statische Schatten mit zwischengespeicherter Schattenkarte. Ultra ergänzt dynamische Fahrzeugschatten und Kantenglättung über FXAA.
+- `src/render/` enthält den WebGL-Renderer, prozedurale Oberflächen, spiegelnde Materialien, Tag- und Abendlicht, die Fahrzeuggeometrie und die Grafikstufen. Performance reduziert Pixelbudget und Sichtweite. Balanced ergänzt statische Schatten mit zwischengespeicherter Schattenkarte. Balanced und Ultra erfassen die statische Umgebung des Audi für Lack und Glas in einer lokalen 64-Pixel-Cubemap. Pro Frame wird höchstens eine Seite erneuert. Ultra ergänzt dynamische Fahrzeugschatten und Kantenglättung über FXAA.
 - `src/world/` erzeugt Stadt, Straßen, Ampeln, Parkbuchten, statische Kollisionen und KI-Verkehr aus lokalem Quellcode.
 - `src/simulation/` berechnet die Fahrt mit 60 Hz. Das frontlastige Zweiachsmodell koppelt vier Radkontakte mit einem planaren Kontaktlöser für Fahrzeuge. Lose Gegenstände und abgelöste Teile haben vereinfachte räumliche Bewegung mit Schwerkraft, Boden und begrenzten Kollisionsschritten. Figuren nutzen gewichtete Knoten mit Gelenkgrenzen. Zeitfahrt und Crashlabor teilen die Simulationsuhr.
 - `src/ui/` enthält Kamera, Minikarte und synthetischen Web-Audio-Ton mit Drehzahl und Last sowie belagsabhängigem Abrollgeräusch.
@@ -70,7 +72,7 @@ Das Avant-Modell entstand anhand der Proportionen des [Audi-Datenblatts zum A6 A
 
 Für Scheinwerferwaschdüsen, Zusatzinstrumente und Mittelkonsole diente ein [A6 Avant von 1996](https://bringatrailer.com/listing/1996-audi-a6-3/) als Referenz. Das Holzdekor orientiert sich an der dokumentierten Ausstattung eines [späten C4 Avant](https://carsandbids.com/auctions/9lRbeyjE/1998-audi-a6-avant-28-quattro).
 
-Die Lösung kombiniert lokale GPU-Verformung, abtrennbare Mesh-Gruppen und einen planaren Fahrzeuglöser. Fahrzeuge bleiben an das Straßenprofil gekoppelt. Die Ausrichtung freier Teile und die Kollisionskörper sind vereinfacht. Die vorhandene statische Cloudflare-Auslieferung benötigt dafür keine neue Laufzeitabhängigkeit. [Rapier 3D](https://rapier.rs/docs/user_guides/javascript/getting_started_js/) ist für spätere räumliche Fahrzeuge und Gelenke geeignet und würde eine asynchrone WebAssembly-Initialisierung in den Build aufnehmen.
+Die Lösung kombiniert lokale GPU-Verformung, abtrennbare Mesh-Gruppen und einen planaren Fahrzeuglöser. Im Stadtverkehr bleiben Fahrzeuge an das Straßenprofil gekoppelt. Der separate Bordsteinversuch berechnet seitliche und vertikale Bewegung sowie Drehimpuls um die Längsachse mit sechs Kontaktteilschritten pro Tick. Reifen, Schweller und Dachkanten können die Stufe und den Boden berühren. Die Ausrichtung freier Teile und die Kollisionskörper sind vereinfacht. Die vorhandene statische Cloudflare-Auslieferung benötigt dafür keine neue Laufzeitabhängigkeit. [Rapier 3D](https://rapier.rs/docs/user_guides/javascript/getting_started_js/) ist für spätere räumliche Fahrzeuge und Gelenke geeignet und würde eine asynchrone WebAssembly-Initialisierung in den Build aufnehmen.
 
 ## Veröffentlichung
 

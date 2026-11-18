@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { captureReferenceViews } from './reference-views.mjs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -126,6 +127,10 @@ try {
   await send('Network.enable');
   if (server) await waitFor('Static build server', () => serverPort);
   await open();
+  if (process.env.VISUAL_COMPARE === '1') {
+    await captureReferenceViews(send, evaluate, snap, version);
+    await open();
+  }
   const gpu = await evaluate(`(() => {
     const gl = document.getElementById('view').getContext('webgl');
     const extension = gl.getExtension('WEBGL_debug_renderer_info');
@@ -250,6 +255,9 @@ try {
   await click('#beginLab');
   await click('#qualityBtn');
   await click('#qualityBtn');
+  await send('Performance.enable');
+  const metrics = async () => Object.fromEntries((await send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
+  const before = await metrics();
   const { result: measured } = await send('Runtime.evaluate', {
     expression: `new Promise(resolve => {
       let start, previous;
@@ -269,9 +277,29 @@ try {
     })`, awaitPromise: true, returnByValue: true,
   });
   const frameTimes = measured.value;
+  const after = await metrics();
+  frameTimes.mainThreadBusyPct = Math.round(100 * (after.TaskDuration - before.TaskDuration) / (after.Timestamp - before.Timestamp));
+  frameTimes.jsHeapMiB = Math.round(after.JSHeapUsedSize / 1048576 * 10) / 10;
   assert.ok(frameTimes?.count > 8);
   await waitFor('Chain lab collision', () => evaluate(`!document.getElementById('labValues').hidden`));
   await snap('a6-v09-chain');
+  await click('#labBtn');
+  await chooseLab('rollover', 100);
+  await click('#beginLab');
+  await waitFor('Roof impact after a lateral trip', () => evaluate(`document.getElementById('labStatus').textContent.includes('Dachstauchung')`));
+  await snap('Audi-0.10.0-Kippversuch');
+  await waitFor('Sled settles', () => evaluate(`document.getElementById('speed').textContent === '0'`));
+  await delay(650);
+  const originalRoof = await evaluate(`document.getElementById('labStatus').textContent`);
+  await click('#replayLab');
+  await waitFor('Recorded run reaches its stop point', () => evaluate(`document.getElementById('replayLab').textContent === 'Erneut abspielen'`));
+  assert.equal(await evaluate(`document.getElementById('labStatus').textContent`), originalRoof);
+  await click('#driveReset');
+  assert.equal(await evaluate(`document.getElementById('replayLab').getAttribute('aria-pressed')`), 'false');
+  await click('#labBtn');
+  await chooseLab('wheel', 100);
+  await click('#beginLab');
+  await waitFor('Right front wheel separates', () => evaluate(`document.getElementById('runningGear').textContent === 'Vorderrad rechts abgerissen'`));
   await click('#labBtn');
   await click('#exitLab');
   assert.equal(await evaluate(`document.getElementById('labReport').hidden`), true);

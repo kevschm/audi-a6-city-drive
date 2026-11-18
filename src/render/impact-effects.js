@@ -12,7 +12,7 @@ export function createImpactEffects(random = Math.random) {
 
   function emit(impact) {
     const { x, z, nx, nz, closingSpeed, scrapeSpeed } = impact;
-    const height = impact.wheelChange > 0.10 ? 0.18 : 0.35;
+    const height = impact.y ?? (impact.wheelChange > 0.10 ? 0.18 : 0.35);
     const hard = !['wood', 'plastic'].includes(impact.material);
     const sparks = hard ? Math.round(Math.min(18, (Math.max(0, closingSpeed - 3) + scrapeSpeed * 0.65) * 1.2)) : 0;
     const dust = Math.round(Math.min(9, closingSpeed * 0.55));
@@ -29,7 +29,7 @@ export function createImpactEffects(random = Math.random) {
       });
     }
     if (impact.glassBreak) for (let i = 0; i < 12; i++) add({
-      x: x + nx * 0.35, y: 1.05 + random() * 0.23, z: z + nz * 0.35,
+      x: x + nx * 0.35, y: (impact.y ?? 1.05) + random() * 0.23, z: z + nz * 0.35,
       vx: nx * 2.8 + (random() - 0.5) * 5, vy: 0.5 + random() * 2.6, vz: nz * 2.8 + (random() - 0.5) * 4,
       life: 0.36 + random() * 0.40, type: 0.82, size: 0.034,
     });
@@ -49,6 +49,7 @@ export function createImpactEffects(random = Math.random) {
   }
 
   function drive(car, dt, wet, low) {
+    if (car.lateralTest) return;
     const speed = Math.abs(car.speed);
     const grounds = car.surface !== 'asphalt';
     const skid = Math.max(0, (car.skid || 0) - 0.33);
