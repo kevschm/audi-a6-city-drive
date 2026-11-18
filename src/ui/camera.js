@@ -1,7 +1,8 @@
 import { clamp, lerp, mixAngle } from '../render/math.js';
 
-export const cameraNames = ['Verfolger', 'Schrägansicht', 'Motorhaube', 'Frontansicht', 'Frei'];
-export const ORBIT_MODE = cameraNames.length - 1;
+export const cameraNames = ['Verfolger', 'Schrägansicht', 'Motorhaube', 'Frontansicht', 'Frei', 'Cockpit'];
+export const ORBIT_MODE = 4;
+export const COCKPIT_MODE = 5;
 
 function cameraClearance(x, z, dx, dz, obstacles) {
   let nearest = 1;
@@ -22,6 +23,15 @@ export function createCamera() {
   let heading, clearance, speed, height, fieldOfView;
 
   function update(car, mode, dt, obstacles, orbit) {
+    if (mode === COCKPIT_MODE) {
+      const s = Math.sin(car.heading), c = Math.cos(car.heading);
+      const x = car.x - 0.40 * c, z = car.z + 0.40 * s;
+      return {
+        eye: [x - 0.12 * s, 1.302 + car.heave, z - 0.12 * c],
+        target: [x + s * 20, 0.99 + car.heave - car.pitch * 7, z + c * 20],
+        fov: 61 * Math.PI / 180,
+      };
+    }
     if (mode === ORBIT_MODE) {
       const angle = car.heading + orbit.azimuth;
       const flatDistance = orbit.distance * Math.cos(orbit.elevation);

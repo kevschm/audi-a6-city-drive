@@ -1,7 +1,7 @@
 import { basis, identity, intersectsFrustum, multiply, orthographic, perspective, unit, view } from './math.js';
-import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-060';
+import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-070';
 
-export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5 };
+export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5, lens: 6 };
 export const GRAPHICS = {
   performance: { label: 'Performance', maxScale: 0.82, pixels: 780_000, far: 182, trafficDistance: 95 },
   balanced: { label: 'Balanced', maxScale: 1.45, pixels: 1_430_000, far: 265, trafficDistance: 135 },
@@ -98,7 +98,7 @@ export function createRenderer(canvas) {
   const sky = pipeline(gl, shader(skyVertex), shader(skyFragment), ['Forward', 'Right', 'Up', 'Frame', 'Sun', 'Dusk']);
   const lit = pipeline(gl, shader(meshVertex), shader(meshFragment), [
     'VP', 'Model', 'Light', 'Eye', 'Sun', 'Dusk', 'Tint', 'Contact', 'Style', 'Emission', 'Shadows', 'Texel',
-    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Street',
+    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Street', 'Wet', 'MirrorPass', 'MirrorOn', 'MirrorVP', 'Mirror', 'Stride',
   ]);
   const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage']);
   const particles = pipeline(gl, shader(particleVertex), shader(particleFragment), ['VP', 'Viewport']);
@@ -107,6 +107,7 @@ export function createRenderer(canvas) {
   const present = pipeline(gl, shader(skyVertex), shader(presentFragment), ['Image', 'Pixel']);
   const shadow = highPrecision ? shadowTarget(gl) : null;
   const color = sceneTarget(gl);
+  const mirror = sceneTarget(gl);
   const blank = texture(gl);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
   const screen = gl.createBuffer();
@@ -115,7 +116,7 @@ export function createRenderer(canvas) {
   gl.enable(gl.DEPTH_TEST);
   gl.depthFunc(gl.LEQUAL);
   let calls = 0;
-  let shadowKey, cachedLight;
+  let shadowKey, cachedLight, mirrorVP = world, mirrorAge = 0;
 
   function drawScreen() {
     gl.bindBuffer(gl.ARRAY_BUFFER, screen);
@@ -142,12 +143,13 @@ export function createRenderer(canvas) {
     calls++;
   }
 
-  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage = intact }) {
+  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage = intact, stride = 0 }) {
     gl.uniformMatrix4fv(lit.Model, false, model);
     gl.uniform3fv(lit.Tint, tint);
     gl.uniform1f(lit.Style, style);
     gl.uniform1f(lit.Emission, emission);
     gl.uniform4fv(lit.Damage, damage);
+    gl.uniform1f(lit.Stride, stride);
     draw(mesh, true);
   }
 
@@ -165,7 +167,24 @@ export function createRenderer(canvas) {
     calls++;
   }
 
-  function render({ eye, target, fov, scale, quality, chunks, landscape, objects, contacts, focus, dusk = 0, headlights = false, heading = 0, beamStrength = 1, street = [], effects }) {
+  function drawSky(axes, aspect, fov, sun, dusk) {
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.useProgram(sky.program);
+    gl.uniform3fv(sky.Forward, axes.forward);
+    gl.uniform3fv(sky.Right, axes.right);
+    gl.uniform3fv(sky.Up, axes.up);
+    gl.uniform3fv(sky.Sun, sun);
+    gl.uniform1f(sky.Dusk, dusk);
+    const slope = Math.tan(fov * 0.5);
+    gl.uniform2f(sky.Frame, slope * aspect, slope);
+    drawScreen();
+    gl.depthMask(true);
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  function render({ eye, target, fov, scale, quality, chunks, landscape, objects, contacts, focus, dusk = 0, headlights = false, heading = 0, beamStrength = 1, street = [], effects, wet = 0 }) {
     calls = 0;
     const width = Math.max(1, canvas.clientWidth), height = Math.max(1, canvas.clientHeight);
     const profile = GRAPHICS[quality];
@@ -219,40 +238,58 @@ export function createRenderer(canvas) {
       light = cachedLight;
     }
 
+    for (let i = 0; i < 4; i++) streetUniform.set(street[i] || [0, -1, 0], i * 3);
+    const reflectWidth = Math.min(620, Math.max(1, Math.round(rw * 0.51)));
+    const reflectHeight = Math.max(1, Math.round(reflectWidth * height / width));
+    const useMirror = qualityPass && wet > 0.01 && mirror.size(reflectWidth, reflectHeight);
+
+    function prepareLighting(passVP, passEye, reflected) {
+      gl.useProgram(lit.program);
+      gl.uniformMatrix4fv(lit.VP, false, passVP);
+      gl.uniformMatrix4fv(lit.Light, false, light);
+      gl.uniform3fv(lit.Eye, passEye);
+      gl.uniform3fv(lit.Sun, sun);
+      gl.uniform1f(lit.Dusk, dusk);
+      gl.uniform1f(lit.Detail, !reflected && quality !== 'performance' ? 1 : 0);
+      gl.uniform1f(lit.HeadLamp, headlights && !reflected ? (0.16 + dusk * 3.95) * beamStrength : 0);
+      gl.uniform2f(lit.HeadAxis, Math.sin(heading), Math.cos(heading));
+      gl.uniform3fv(lit.Street, streetUniform);
+      gl.uniform3fv(lit.Contact, focus);
+      gl.uniform1f(lit.Shadows, useShadow && !reflected ? 1 : 0);
+      gl.uniform1f(lit.Texel, 1 / shadowSize);
+      gl.uniform1f(lit.Wet, reflected ? 0 : wet);
+      gl.uniform1f(lit.MirrorPass, reflected ? 1 : 0);
+      gl.uniform1f(lit.MirrorOn, useMirror && !reflected ? 1 : 0);
+      gl.uniformMatrix4fv(lit.MirrorVP, false, mirrorVP);
+      gl.uniform1i(lit.Depth, 0);
+      gl.uniform1i(lit.Mirror, 1);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, useMirror && !reflected ? mirror.image : blank);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, useShadow && !reflected ? shadow.depth : blank);
+    }
+
+    if (useMirror && mirrorAge++ % 3 === 0) {
+      const reflect = ([x, y, z]) => [x, 0.02 - y, z];
+      const mirroredEye = reflect(eye), mirroredAim = reflect(target);
+      const mirroredAxes = basis(mirroredEye, mirroredAim);
+      mirroredAxes.right = mirroredAxes.right.map(value => -value);
+      mirrorVP = multiply(perspective(fov, width / height, 0.12, 152), view(mirroredEye, mirroredAxes));
+      gl.bindFramebuffer(gl.FRAMEBUFFER, mirror.framebuffer);
+      gl.viewport(0, 0, reflectWidth, reflectHeight);
+      drawSky(mirroredAxes, width / height, fov, sun, dusk);
+      prepareLighting(mirrorVP, mirroredEye, true);
+      for (const chunk of chunks) if (intersectsFrustum(mirrorVP, chunk)) drawLit(chunk);
+      for (const object of objects) if (!object.cockpit && (!object.bounds || intersectsFrustum(mirrorVP, object.bounds))) drawLit(object);
+    } else if (!useMirror) {
+      mirrorAge = 0;
+    }
+
     const useAntialias = qualityPass && color.size(rw, rh);
     gl.bindFramebuffer(gl.FRAMEBUFFER, useAntialias ? color.framebuffer : null);
     gl.viewport(0, 0, rw, rh);
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-    gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-    gl.useProgram(sky.program);
-    gl.uniform3fv(sky.Forward, axes.forward);
-    gl.uniform3fv(sky.Right, axes.right);
-    gl.uniform3fv(sky.Up, axes.up);
-    gl.uniform3fv(sky.Sun, sun);
-    gl.uniform1f(sky.Dusk, dusk);
-    const slope = Math.tan(fov * 0.5);
-    gl.uniform2f(sky.Frame, slope * width / height, slope);
-    drawScreen();
-    gl.depthMask(true);
-    gl.enable(gl.DEPTH_TEST);
-
-    gl.useProgram(lit.program);
-    gl.uniformMatrix4fv(lit.VP, false, vp);
-    gl.uniformMatrix4fv(lit.Light, false, light);
-    gl.uniform3fv(lit.Eye, eye);
-    gl.uniform3fv(lit.Sun, sun);
-    gl.uniform1f(lit.Dusk, dusk);
-    gl.uniform1f(lit.Detail, quality === 'performance' ? 0 : 1);
-    gl.uniform1f(lit.HeadLamp, headlights ? (0.16 + dusk * 3.95) * beamStrength : 0);
-    gl.uniform2f(lit.HeadAxis, Math.sin(heading), Math.cos(heading));
-    for (let i = 0; i < 4; i++) streetUniform.set(street[i] || [0, -1, 0], i * 3);
-    gl.uniform3fv(lit.Street, streetUniform);
-    gl.uniform3fv(lit.Contact, focus);
-    gl.uniform1f(lit.Shadows, useShadow ? 1 : 0);
-    gl.uniform1f(lit.Texel, 1 / shadowSize);
-    gl.uniform1i(lit.Depth, 0);
-    gl.bindTexture(gl.TEXTURE_2D, useShadow ? shadow.depth : blank);
+    drawSky(axes, width / height, fov, sun, dusk);
+    prepareLighting(vp, eye, false);
     drawLit({ mesh: landscape });
     for (const chunk of chunks) {
       if (intersectsFrustum(vp, chunk)) drawLit(chunk);

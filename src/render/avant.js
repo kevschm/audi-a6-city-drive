@@ -289,14 +289,28 @@ function buildCabin(body, paint, glass, brightwork) {
     const rail = [[railX, 1.424, -1.811], [railX, 1.488, -1.56], [railX, 1.498, -.67], [railX, 1.484, .218], [railX, 1.431, .393]];
     sweep(brightwork, rail, .025, 8, rgb(64, 68, 72));
 
-    // Folded mirrors and blue-grey mirror glass insert.
+    // Rounded body-colour housing, recessed matte rim and mirror glass.
     sweep(body, [[side * .774, 1.091, .834], [side * .89, 1.101, .805]], .045, 6, molding);
-    const shell = (x, y, z) => [side * x, y, z];
-    face(paint, [0, 0, 1], lacquer, shell(.852, 1.060, .860), shell(1.001, 1.074, .836), shell(.991, 1.159, .832), shell(.859, 1.166, .856));
-    face(paint, [0, 1, 0], paintEdge, shell(.859, 1.166, .856), shell(.991, 1.159, .832), shell(1.016, 1.149, .762), shell(.855, 1.167, .757));
-    face(paint, [side, 0, 0], lacquer, shell(1.001, 1.074, .836), shell(1.012, 1.076, .765), shell(1.016, 1.149, .762), shell(.991, 1.159, .832));
-    face(body, [0, 0, -1], seal, shell(.852, 1.062, .757), shell(1.012, 1.076, .765), shell(1.016, 1.149, .762), shell(.855, 1.167, .757));
-    face(brightwork, [0, 0, -1], glassTop, shell(.866, 1.077, .748), shell(.998, 1.087, .756), shell(1.002, 1.138, .754), shell(.867, 1.153, .748));
+    const outline = [[-.72, -.83], [.72, -.83], [.95, -.44], [.93, .44], [.65, .82], [-.66, .91], [-.91, .53], [-.98, -.43]];
+    const mirrorRing = (index, scale, z) => {
+      const [x, y] = outline[index];
+      return [side * (.929 + .092 * x * scale), 1.117 + .052 * y * scale, z - x * 0.013];
+    };
+    for (let j = 0; j < outline.length; j++) {
+      const i = (j + 1) % outline.length;
+      const back = mirrorRing(j, 1, .759), backNext = mirrorRing(i, 1, .759);
+      const front = mirrorRing(j, .75, .852), frontNext = mirrorRing(i, .75, .852);
+      const normalAt = ([x, y, z]) => {
+        const n = [side * (Math.abs(x) - .929) * 8, (y - 1.117) * 12, (z - .805) * 8];
+        return n.map(value => value / Math.hypot(...n));
+      };
+      const normal = normalAt(back);
+      panel(paint, normal, lacquer, [back, backNext, frontNext, front], normalAt);
+      face(paint, [0, 0, 1], lacquer, [side * .929, 1.117, .867], front, frontNext);
+      face(body, [0, 0, -1], seal, backNext, back, mirrorRing(j, .87, .755), mirrorRing(i, .87, .755));
+      face(brightwork, [0, 0, -1], glassTop,
+        [side * .929, 1.117, .753], mirrorRing(i, .87, .753), mirrorRing(j, .87, .753));
+    }
   }
 
   for (const end of sides) buildWindscreen(body, paint, glass, end);

@@ -94,6 +94,7 @@ uniform mat4 uVP;
 uniform mat4 uModel;
 uniform mat4 uLight;
 uniform vec3 uEye;
+uniform float uStride;
 varying vec3 vEyeDelta;
 varying vec3 vColor;
 varying vec3 vNormal;
@@ -104,7 +105,13 @@ varying float vMaterial;
 varying float vDistress;
 ${deformation}
 void main() {
-  vec4 world = uModel * vec4(dent(aPos, vDistress), 1.0);
+  vec3 local = dent(aPos, vDistress);
+  if (uStride != 0.0 && local.y < 0.85) {
+    float stride = uStride * sign(local.x) * (1.0 - local.y / 0.85);
+    local.z += 0.22 * stride;
+    local.y += max(0.0, stride) * 0.071;
+  }
+  vec4 world = uModel * vec4(local, 1.0);
   vWorld = world.xyz;
   vEyeDelta = uEye - world.xyz;
   vLocal = aPos;
@@ -129,6 +136,11 @@ uniform float uHeadLamp;
 uniform vec2 uHeadAxis;
 uniform vec3 uStreet[4];
 uniform sampler2D uDepth;
+uniform float uWet;
+uniform float uMirrorPass;
+uniform float uMirrorOn;
+uniform mat4 uMirrorVP;
+uniform sampler2D uMirror;
 varying vec3 vEyeDelta;
 varying vec3 vColor;
 varying vec3 vNormal;
@@ -184,6 +196,11 @@ float surfaceGrain(vec3 n, float d) {
   return 1.0 + (hash(floor(brick)) * 0.16 - 0.08 - mortar * 0.19) * closeup;
 }
 
+float wetPatches(vec2 position) {
+  float pools = noise2(position * 0.14) * 0.66 + noise2(position * 0.31) * 0.34;
+  return smoothstep(0.38, 0.73, pools);
+}
+
 vec3 reflectedLight(vec3 ray, float roughness) {
   // Approximate the skyline and lit asphalt as broad reflection sources.
   vec2 azimuth = ray.xz / max(0.27, length(ray.xz));
@@ -231,6 +248,7 @@ vec3 displayColor(vec3 linear) {
 }
 
 void main() {
+  if (uMirrorPass > 0.5 && vWorld.y < 0.045) discard;
   if (uStyle > 3.5 && uStyle < 4.5) {
     vec2 oval = vLocal.xz / vec2(1.35, 2.85);
     float alpha = 0.47 * (1.0 - smoothstep(0.22, 1.0, length(oval)));
@@ -244,6 +262,7 @@ void main() {
   bool water = vMaterial > 7.5 && vMaterial < 8.5;
   if (water) n = normalize(n + 0.028 * vec3(sin(vWorld.z * 8.5), 0.0, sin(vWorld.x * 11.0)));
   float direct = max(0.0, dot(n, uSun));
+  bool lens = uStyle > 5.5;
   float sky = n.y * 0.5 + 0.5;
   float visibility = sunlight(direct);
   vec3 ambient = mix(vec3(0.31, 0.35, 0.42), vec3(0.59, 0.72, 0.92), sky)
@@ -255,31 +274,70 @@ void main() {
     float abrasion = smoothstep(0.57, 0.82, scoring) * vDistress;
     vec3 exposed = mix(vec3(0.19, 0.185, 0.17), vec3(0.55, 0.53, 0.49), smoothstep(0.10, 0.57, vDistress));
     baseColor = mix(baseColor, exposed, abrasion * 0.72);
+    if (lens && vDistress > 0.25) {
+      vec2 pane = vec2(vLocal.x * 41.0 + vLocal.z * 24.0, vLocal.y * 68.0);
+      float shift = noise2(pane * 0.45);
+      float web = min(abs(fract(pane.x + pane.y * 0.76 + shift * 0.8) - 0.5),
+        abs(fract(pane.y * 0.6 - pane.x * 0.42 + shift * 0.64) - 0.5));
+      float broken = (1.0 - smoothstep(0.06, 0.19, web)) * smoothstep(0.25, 0.68, vDistress);
+      baseColor = mix(baseColor * (1.0 - 0.52 * vDistress), vec3(0.52, 0.60, 0.64), broken * 0.78);
+    }
   }
   vec3 base = baseColor * baseColor;
   vec3 lit = base * (ambient + visibility * direct * sunLight) * surfaceGrain(n, d);
+  if (vMaterial > 9.5) {
+    float density = noise2((vWorld.xz + vWorld.y * vec2(0.43, 0.59)) * 12.0);
+    lit *= 0.86 + 0.29 * density;
+    lit += base * pow(max(0.0, dot(-n, uSun)), 2.0) * vec3(0.24, 0.35, 0.13);
+  }
   lit += base * headlight(n) * vec3(1.0, 0.85, 0.66);
   lit += base * streetLight(n) * vec3(1.0, 0.72, 0.39);
 
   bool paint = uStyle > 0.5 && uStyle < 1.5;
   bool glass = (uStyle > 1.5 && uStyle < 2.5) || (vMaterial > 6.5 && vMaterial < 7.5);
-  bool metal = (uStyle > 4.5 && uStyle < 5.5) || vMaterial > 8.5;
-  if (paint || glass || metal || water) {
-    float roughness = glass ? 0.16 : metal ? 0.27 : 0.22;
+  bool metal = (uStyle > 4.5 && uStyle < 5.5) || (vMaterial > 8.5 && vMaterial < 9.5);
+  if (paint || glass || metal || water || lens) {
+    float roughness = glass || lens ? 0.16 : metal ? 0.27 : 0.17;
     float f0 = glass || water ? 0.045 : metal ? 0.45 : 0.038;
     float edge = pow(1.0 - clamp(dot(toEye, n), 0.0, 1.0), 5.0);
     float fresnel = f0 + (1.0 - f0) * edge * (paint ? 0.58 : 0.87);
-    vec3 surroundings = reflectedLight(reflect(-toEye, n), roughness);
+    vec3 reflectedDir = reflect(-toEye, n);
+    vec3 surroundings = reflectedLight(reflectedDir, roughness);
+    if (paint || glass) {
+      float cloud = noise2(reflectedDir.xz * (2.6 / (0.28 + abs(reflectedDir.y))) + vec2(0.7, 2.4));
+      surroundings += vec3(0.30, 0.34, 0.40) * smoothstep(0.52, 0.78, cloud) * smoothstep(0.03, 0.5, reflectedDir.y);
+    }
     vec3 glossy = surroundings * surroundings;
     float shine = max(0.0, dot(normalize(uSun + toEye), n));
     lit = lit * (1.0 - fresnel * 0.78) + glossy * fresnel;
     lit += sunLight * pow(shine, 2.0 / (roughness * roughness)) * visibility * direct * (metal ? 0.75 : 0.37);
   }
-  lit += base * uEmission;
+  lit += base * uEmission * (lens ? 1.0 - 0.65 * vDistress : 1.0);
   float haze = min(d * mix(0.0042, 0.005, uDusk), 3.0);
   float fog = 1.0 - exp(-haze * haze);
   vec3 fogColor = horizon(-toEye);
   vec3 rgb = mix(displayColor(lit), fogColor, fog * 0.93);
+  if (uWet > 0.007 && uMirrorPass < 0.5 && vMaterial > 0.5 && vMaterial < 2.5 && n.y > 0.65) {
+    float pools = wetPatches(vWorld.xz);
+    float moisture = uWet * (0.34 + 0.66 * pools) * (1.0 - smoothstep(105.0, 160.0, d));
+    float fresnel = pow(1.0 - max(0.0, dot(n, toEye)), 3.5);
+    vec3 ray = reflect(-toEye, n);
+    vec3 reflected = skyColor(ray);
+    float strength = moisture * (0.08 + fresnel * 0.48);
+    if (uMirrorOn > 0.5 && vWorld.y < 0.055) {
+      vec4 projected = uMirrorVP * vec4(vWorld.x, 0.01, vWorld.z, 1.0);
+      vec2 uv = projected.xy / max(0.1, projected.w) * 0.5 + 0.5;
+      float edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+      float weight = smoothstep(0.015, 0.10, edge) * smoothstep(0.1, 1.0, projected.w);
+      if (weight > 0.0) {
+        float rough = (1.0 - pools) * 0.0028;
+        vec2 rippled = uv + vec2(sin(vWorld.z * 11.7), cos(vWorld.x * 13.3)) * rough;
+        reflected = mix(reflected, texture2D(uMirror, rippled).rgb, weight);
+        strength += moisture * weight * fresnel * 0.30;
+      }
+    }
+    rgb = mix(rgb * (1.0 - moisture * 0.28), reflected, clamp(strength, 0.0, 0.74));
+  }
   gl_FragColor = vec4(rgb + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }
 `;
@@ -346,8 +404,12 @@ varying vec2 vAppearance;
 void main() {
   float radial = length(gl_PointCoord * 2.0 - 1.0);
   float edge = 1.0 - smoothstep(0.13, 1.0, radial);
-  vec3 rgb = mix(vec3(0.61, 0.56, 0.49), vec3(1.0, 0.66, 0.22), vAppearance.y);
-  gl_FragColor = vec4(rgb, edge * vAppearance.x * mix(0.28, 1.0, vAppearance.y));
+  float spark = step(0.92, vAppearance.y);
+  float vapor = step(0.19, vAppearance.y);
+  vec3 rgb = mix(vec3(0.61, 0.56, 0.49), vec3(0.78, 0.82, 0.86), vapor);
+  rgb = mix(rgb, vec3(1.0, 0.69, 0.28), spark);
+  float opacity = mix(0.24, 0.18, vapor);
+  gl_FragColor = vec4(rgb, edge * vAppearance.x * mix(opacity, 1.0, spark));
 }
 `;
 

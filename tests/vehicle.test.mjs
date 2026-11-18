@@ -38,6 +38,15 @@ test('full throttle reaches 100 km/h with automatic shifts and plausible timing'
   assert.ok(car.pitch < 0 && car.spin > 0 && car.km > 0);
 });
 
+test('a wet road increases stopping distance without preventing a full stop', () => {
+  const dry = createVehicleState(), wet = createVehicleState();
+  dry.vz = wet.vz = 100 / 3.6;
+  drive(dry, { brake: 1 }, 8, openRoad);
+  drive(wet, { brake: 1 }, 8, { ...openRoad, wetness: 1 });
+  assert.equal(wet.speed, 0);
+  assert.ok(wet.z > dry.z * 1.17 && wet.z < dry.z * 1.52);
+});
+
 test('service brake stops within a plausible distance and held brake never engages reverse', () => {
   const car = createVehicleState();
   car.vz = 100 / 3.6;

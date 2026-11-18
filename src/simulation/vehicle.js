@@ -135,8 +135,10 @@ export function stepVehicle(car, input, dt, world = {}) {
   // Lateral load transfer places grip priority on the outside wheels. This
   // matters when one side rides on paving or grass and the other on asphalt.
   const leftWeight = 0.5 + clamp(car.lateralAccel * CG_HEIGHT / (2 * GRAVITY * HALF_TRACK), -0.32, 0.32);
-  const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96;
-  const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1);
+  const wet = clamp(world.wetness ?? 0, 0, 1);
+  const wetGrip = 1 - wet * (surface === SURFACES.grass ? 0.12 : 0.16 + clamp((speed - 18) / 25, 0, 1) * 0.075);
+  const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96 * wetGrip;
+  const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1) * wetGrip;
   const shiftPower = car.shiftTimer > 0 ? mix(1, 0.36, clamp(car.shiftTimer / 0.18, 0, 1)) : 1;
   const reversePower = reverseDrive ? -0.64 * (1 - clamp(speed / 9, 0, 1) ** 4) : 1;
   const traction = driveCommand > 0 ? car.throttle * reversePower * engineTorque(car.rpm) *

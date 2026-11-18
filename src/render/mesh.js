@@ -3,7 +3,7 @@ export const color = (hex, brightness = 1) => {
   return [16, 8, 0].map(shift => Math.min(1, (value >> shift & 255) / 255 * brightness));
 };
 
-const materialId = { asphalt: 1, paving: 2, grass: 3, roof: 4, plaster: 5, brick: 6, glass: 7, water: 8, metal: 9 };
+const materialId = { asphalt: 1, paving: 2, grass: 3, roof: 4, plaster: 5, brick: 6, glass: 7, water: 8, metal: 9, foliage: 10 };
 
 export class Mesh {
   constructor() {
@@ -70,8 +70,16 @@ export class Mesh {
       const a = i * 2 * Math.PI / slices, b = -Math.PI / 2 + j * Math.PI / stacks;
       return [x + rx * Math.cos(a) * Math.cos(b), y + ry * Math.sin(b), z + rz * Math.sin(a) * Math.cos(b)];
     }
+    const normal = p => {
+      const n = [(p[0] - x) / (rx * rx), (p[1] - y) / (ry * ry), (p[2] - z) / (rz * rz)];
+      const length = Math.hypot(...n);
+      return n.map(value => value / length);
+    };
     for (let j = 0; j < stacks; j++) {
-      for (let i = 0; i < slices; i++) this.quad(point(i, j), point(i, j + 1), point(i + 1, j + 1), point(i + 1, j), fill, material);
+      for (let i = 0; i < slices; i++) {
+        const corners = [point(i, j), point(i, j + 1), point(i + 1, j + 1), point(i + 1, j)];
+        this.quad(...corners, fill, material, material === 'foliage' ? corners.map(normal) : undefined);
+      }
     }
   }
 

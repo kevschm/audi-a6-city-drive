@@ -108,7 +108,7 @@ export function createDriveAudio() {
     return enabled;
   }
 
-  function update(car, throttle, running, hood = false) {
+  function update(car, throttle, running, hood = false, wet = 0) {
     if (!ctx || ctx.state !== 'running') return;
     const now = ctx.currentTime;
     const rpm = car.rpm || 850;
@@ -124,8 +124,8 @@ export function createDriveAudio() {
     engineGain.gain.setTargetAtTime(running ? 0.032 + load * 0.106 + rpm * 0.000005 : 0, now, 0.067);
     intakeFilter.frequency.setTargetAtTime(320 + rpm * 0.14, now, 0.065);
     intakeGain.gain.setTargetAtTime(running ? load ** 1.25 * (hood ? 0.18 : 0.12) + 0.025 * car.damage[0] : 0, now, 0.08);
-    roadFilter.frequency.setTargetAtTime((paving ? 206 : grass ? 139 : 165) + speed * (grass ? 10 : 22), now, 0.14);
-    roadGain.gain.setTargetAtTime(running ? Math.min(speed * (paving ? 0.0052 : 0.0026), 0.11) : 0, now, 0.15);
+    roadFilter.frequency.setTargetAtTime((paving ? 206 : grass ? 139 : 165) + speed * (grass ? 10 : 22 + wet * 35), now, 0.14);
+    roadGain.gain.setTargetAtTime(running ? Math.min(speed * (paving ? 0.0052 : 0.0026 + 0.0023 * wet), 0.13) : 0, now, 0.15);
     rollingPulse.frequency.setTargetAtTime(4.0 + speed * 1.75, now, 0.12);
     pulseDepth.gain.setTargetAtTime(running && paving ? Math.min(speed * 0.0019, 0.027) : 0, now, 0.10);
     skidFilter.frequency.setTargetAtTime((grass ? 480 : 975) + speed * 16, now, 0.07);

@@ -5,13 +5,15 @@ import { damageAreas } from './simulation/vehicle-damage.js';
 import { createTimeTrial, formatTrialTime } from './simulation/time-trial.js';
 import { buildCity, districtAt, groundHeightAt, halfWorld, roads, roadHalfWidth, roadSurfaceAt, startPosition } from './world/city.js';
 import { makeTraffic } from './world/traffic.js';
+import { makeWalkers } from './world/walkers.js';
 import { clamp, lerp, mixAngle } from './render/math.js';
 import { Mesh } from './render/mesh.js';
-import { createRenderer, GRAPHICS } from './render/renderer.js?drive-060';
+import { createRenderer, GRAPHICS } from './render/renderer.js?drive-070';
 import { createImpactEffects } from './render/impact-effects.js';
 import { buildVehicles } from './render/vehicles.js';
+import { createActorModels } from './render/city-actors.js';
 import { createMinimap } from './ui/minimap.js';
-import { cameraNames, createCamera, ORBIT_MODE } from './ui/camera.js';
+import { cameraNames, createCamera, COCKPIT_MODE, ORBIT_MODE } from './ui/camera.js';
 import { createOrbitPose, installOrbitGestures } from './ui/orbit.js';
 import { createDriveAudio } from './ui/audio.js';
 
@@ -22,6 +24,7 @@ const buttons = {
   trial: $('trialBtn'), headlights: $('lightBtn'), dusk: $('duskBtn'),
   leftSignal: $('leftSignal'), rightSignal: $('rightSignal'),
   quickReset: $('driveReset'),
+  weather: $('weatherBtn'),
 };
 const keyActions = {
   w: 'throttle', arrowup: 'throttle', s: 'brake', arrowdown: 'brake',
@@ -59,8 +62,11 @@ function boot() {
   renderer.upload(landscape);
   for (const chunk of cityChunks) renderer.upload(chunk.mesh);
   const vehicles = buildVehicles(renderer);
+  const actorModels = createActorModels(renderer);
+  const people = makeWalkers({ obstacles, heightAt: groundHeightAt, surfaceAt: roadSurfaceAt });
   const traffic = makeTraffic(roads, signals);
-  const world = { roads, obstacles, roadSurfaceAt, groundHeightAt, traffic: traffic.actors, bounds: halfWorld };
+  const world = { roads, obstacles, roadSurfaceAt, groundHeightAt, traffic: traffic.actors, bounds: halfWorld,
+    wetness: storage.read('wet-road') === '1' ? 1 : 0 };
   const drawMap = createMinimap($('minimap'), city, roads, roadHalfWidth, halfWorld);
   const camera = createCamera(), clock = createFixedStepClock(), audio = createDriveAudio();
   const orbit = createOrbitPose(), effects = createImpactEffects();
@@ -91,6 +97,7 @@ function boot() {
   let baseInput = { ...input };
   let gamepadsAvailable = typeof navigator.getGamepads === 'function';
   let impactShake = 0;
+  let wet = world.wetness;
   const clearOrbit = installOrbitGestures(canvas, orbit, () => {
     if (!started || paused || failed) return false;
     if (cameraMode !== ORBIT_MODE) selectCamera(ORBIT_MODE, false);
@@ -147,12 +154,15 @@ function boot() {
 
   function draw(dt, interpolation = 1) {
     visible.damage = car.damage;
+    visible.rpm = car.rpm;
     for (const field of ['brakeLights', 'reverseLights']) visible[field] = car[field];
     for (const field of visualFields) visible[field] = lerp(previous[field], car[field], interpolation);
     visible.heading = mixAngle(previous.heading, car.heading, interpolation);
     for (const field of wheelFields) for (let i = 0; i < 4; i++) visible[field][i] = lerp(previous[field][i], car[field][i], interpolation);
     dusk = lerp(dusk, duskTarget, 1 - Math.exp(-dt * 2.8));
     if (Math.abs(dusk - duskTarget) < 0.004) dusk = duskTarget;
+    wet = lerp(wet, world.wetness, 1 - Math.exp(-dt * 3.2));
+    if (Math.abs(wet - world.wetness) < 0.004) wet = world.wetness;
     const view = camera.update(visible, cameraMode, dt, obstacles, orbit);
     if (motion && impactShake > 0.004) {
       view.eye[1] += Math.sin(signalTime * 37) * impactShake * 0.084;
@@ -165,11 +175,12 @@ function boot() {
     const street = dusk > 0.04 ? streetLights.slice().sort((a, b) =>
       (a[0] - visible.x) ** 2 + (a[2] - visible.z) ** 2 - ((b[0] - visible.x) ** 2 + (b[2] - visible.z) ** 2)).slice(0, 4) : [];
     const scene = vehicles.scene(visible, traffic.actors, signals, traffic.signalColor, {
-      showBody: true, far: GRAPHICS[quality].trafficDistance, headlights, blink, dusk, gate: trial.gate, street,
+      cockpit: cameraMode === COCKPIT_MODE, far: GRAPHICS[quality].trafficDistance, headlights, blink, dusk, gate: trial.gate, street,
     });
+    scene.objects.push(...actorModels(people.actors, visible, wet));
     renderer.render({ ...view, scale, quality, chunks: cityChunks, landscape, ...scene,
       dusk, headlights, heading: visible.heading, focus: [visible.x, visible.heave, visible.z],
-      beamStrength: 1 - car.damage[0] * 0.86, street, effects: effects.view() });
+      beamStrength: 1 - car.damage[0] * 0.86, street, effects: effects.view(), wet });
   }
 
   function updateHud() {
@@ -183,7 +194,7 @@ function boot() {
     for (const [index, panel] of [...$('conditionPanels').children].entries()) {
       panel.dataset.level = car.damage[index] < 0.035 ? 'intact' : car.damage[index] < 0.32 ? 'scuffed' : 'damaged';
     }
-    $('place').textContent = districtAt(car.x, car.z) + ' · ' + surfaces[car.surface];
+    $('place').textContent = districtAt(car.x, car.z) + ' · ' + surfaces[car.surface] + (world.wetness ? ' nass' : '');
     $('leftSignal').classList.toggle('lit', signal < 0 && signalTime % 0.72 < 0.39);
     $('rightSignal').classList.toggle('lit', signal > 0 && signalTime % 0.72 < 0.39);
     drawMap(car, traffic.actors, trial.gate);
@@ -201,7 +212,9 @@ function boot() {
     rememberPose();
     traffic.step(dt, car, vehicleOverlapsTraffic, roadHalfWidth);
     stepVehicle(car, input, dt, world);
+    people.step(dt, car);
     effects.step(dt);
+    effects.drive(car, dt, world.wetness, qualityModes[qualityIndex] === 'performance');
     impactShake *= Math.exp(-dt * 8.2);
     signalTime += dt;
     const result = trial.step(dt, previous, car);
@@ -229,7 +242,7 @@ function boot() {
     draw(dt, result.interpolation);
     if (time - lastHud >= 90) {
       updateHud();
-      if (audioEnabled) audio.update(car, input.throttle, true, cameraMode === 2);
+      if (audioEnabled) audio.update(car, input.throttle, true, cameraMode === 2 || cameraMode === COCKPIT_MODE, world.wetness);
       lastHud = time;
     }
     if (adaptive.sample(time)) $('fps').textContent = adaptive.fps + ' FPS';
@@ -336,6 +349,7 @@ function boot() {
 
   function selectCamera(mode, announce = true) {
     cameraMode = mode;
+    $('game').classList.toggle('cockpit-view', mode === COCKPIT_MODE);
     camera.reset();
     buttons.camera.querySelector('span').textContent = cameraNames[cameraMode];
     if (announce) notify(cameraMode === ORBIT_MODE ? 'Ziehen zum Drehen · Pinch oder Mausrad zum Zoomen' : cameraNames[cameraMode]);
@@ -377,6 +391,17 @@ function boot() {
     }
   }
 
+  function switchWeather() {
+    world.wetness = 1 - world.wetness;
+    storage.write('wet-road', world.wetness);
+    buttons.weather.textContent = world.wetness ? 'Nass' : 'Trocken';
+    if (paused) {
+      wet = world.wetness;
+      updateHud();
+      draw(0.016);
+    }
+  }
+
   buttons.start.addEventListener('click', start);
   buttons.camera.addEventListener('click', switchCamera);
   buttons.quality.addEventListener('click', switchQuality);
@@ -388,6 +413,7 @@ function boot() {
   buttons.headlights.addEventListener('click', () => setHeadlights(!headlights));
   buttons.trial.addEventListener('click', switchTrial);
   buttons.dusk.addEventListener('click', switchDusk);
+  buttons.weather.addEventListener('click', switchWeather);
   buttons.leftSignal.addEventListener('click', () => setSignal(-1));
   buttons.rightSignal.addEventListener('click', () => setSignal(1));
   $('steeringGain').value = steeringGain;
@@ -403,6 +429,7 @@ function boot() {
   });
   buttons.quality.querySelector('span').textContent = GRAPHICS[qualityModes[qualityIndex]].label;
   buttons.dusk.textContent = duskTarget ? 'Abend' : 'Tag';
+  buttons.weather.textContent = world.wetness ? 'Nass' : 'Trocken';
   setHeadlights(headlights);
   window.addEventListener('keydown', event => {
     if (!started || failed || event.ctrlKey || event.metaKey || event.altKey) return;

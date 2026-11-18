@@ -1,7 +1,8 @@
 import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
-import { MATERIAL } from './renderer.js?drive-060';
+import { MATERIAL } from './renderer.js?drive-070';
+import { createCockpit, dialAngle, dialPose } from './cockpit.js';
 import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
 
 const volume = (x, y, z, radius, height) =>
@@ -40,6 +41,7 @@ export function buildVehicles(renderer) {
   ].map(name => [name, new Mesh()]));
   buildAvant(avant);
   const cityCar = buildTrafficCar();
+  const cabin = createCockpit();
   const contact = new Mesh();
   contact.quad([-1.36, 0.027, -2.86], [-1.36, 0.027, 2.86], [1.36, 0.027, 2.86], [1.36, 0.027, -2.86], '#191a1c');
   const lenses = ['#ff5942', '#ffbd48', '#63f381'].map(fill => {
@@ -60,9 +62,9 @@ export function buildVehicles(renderer) {
     const x = i * 0.59;
     gateMesh.quad([x - 0.23, 0.024, -0.10], [x - 0.23, 0.024, 0.10], [x + 0.23, 0.024, 0.10], [x + 0.23, 0.024, -0.10], '#ffe5aa');
   }
-  for (const mesh of [...Object.values(avant), ...Object.values(cityCar), contact, gateMesh, streetLamp, ...lenses]) renderer.upload(mesh);
+  for (const mesh of [...Object.values(avant), ...Object.values(cityCar), ...Object.values(cabin), contact, gateMesh, streetLamp, ...lenses]) renderer.upload(mesh);
 
-  function scene(car, traffic, signals, signalColor, { showBody, far, headlights, blink, dusk, gate, street }) {
+  function scene(car, traffic, signals, signalColor, { cockpit, far, headlights, blink, dusk, gate, street }) {
     const objects = [], contacts = [];
     for (const actor of traffic) {
       const distance = Math.hypot(actor.x - car.x, actor.z - car.z);
@@ -93,7 +95,7 @@ export function buildVehicles(renderer) {
       mesh: streetLamp, model: translate(x, y, z), emission: dusk * 1.6,
       bounds: volume(x, y - 0.02, z, 0.28, 0.04),
     });
-    if (showBody) {
+    if (!cockpit) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll, car.pitch);
       contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading, Math.max(0, Math.min(car.heave, 0.16))), style: MATERIAL.contact });
       const damage = car.damage;
@@ -104,12 +106,12 @@ export function buildVehicles(renderer) {
         { ...shell, mesh: avant.paint, style: MATERIAL.paint, castsShadow: true },
         { ...shell, mesh: avant.glass, style: MATERIAL.glass },
         { ...shell, mesh: avant.brightwork, style: MATERIAL.chrome },
-        { ...shell, mesh: avant.tailLights, emission: headlights ? 0.74 * rear : 0.12 },
-        { ...shell, mesh: avant.brakeLights, emission: car.brakeLights ? 2.85 * rear : 0.06 },
-        { ...shell, mesh: avant.reverseLights, emission: car.reverseLights ? 1.15 * rear : 0 },
-        { ...shell, mesh: avant.headLights, emission: headlights ? 0.85 * front : 0 },
-        { ...shell, mesh: avant.leftSignals, emission: blink === -1 ? 2.2 * (1 - damage[2] * 0.9) : 0 },
-        { ...shell, mesh: avant.rightSignals, emission: blink === 1 ? 2.2 * (1 - damage[3] * 0.9) : 0 },
+        { ...shell, mesh: avant.tailLights, style: MATERIAL.lens, emission: headlights ? 0.74 * rear : 0.12 },
+        { ...shell, mesh: avant.brakeLights, style: MATERIAL.lens, emission: car.brakeLights ? 2.85 * rear : 0.06 },
+        { ...shell, mesh: avant.reverseLights, style: MATERIAL.lens, emission: car.reverseLights ? 1.15 * rear : 0 },
+        { ...shell, mesh: avant.headLights, style: MATERIAL.lens, emission: headlights ? 0.85 * front : 0 },
+        { ...shell, mesh: avant.leftSignals, style: MATERIAL.lens, emission: blink === -1 ? 2.2 * (1 - damage[2] * 0.9) : 0 },
+        { ...shell, mesh: avant.rightSignals, style: MATERIAL.lens, emission: blink === 1 ? 2.2 * (1 - damage[3] * 0.9) : 0 },
       );
       const chassis = transform(car.x, car.z, car.heading);
       let index = 0;
@@ -124,6 +126,16 @@ export function buildVehicles(renderer) {
           index++;
         }
       }
+    } else {
+      const body = transform(car.x, car.z, car.heading, car.heave, car.roll * 0.64, car.pitch);
+      objects.push(
+        { mesh: cabin.shell, model: body, cockpit: true },
+        { mesh: cabin.hood, model: body, cockpit: true, style: MATERIAL.paint, damage: car.damage },
+        { mesh: cabin.instruments, model: body, cockpit: true, emission: 0.18 + dusk * 0.13 },
+        { mesh: cabin.wheel, model: dialPose(body, -0.396, 0.963, 0.449, -car.steer * 2.90), cockpit: true },
+        { mesh: cabin.needle, model: dialPose(body, -0.482, 1.021, 0.625, dialAngle(Math.abs(car.speed) * 3.6, 240)), cockpit: true, emission: 0.55 },
+        { mesh: cabin.needle, model: dialPose(body, -0.298, 1.021, 0.625, dialAngle(car.rpm, 7200)), cockpit: true, emission: 0.55 },
+      );
     }
     return { objects, contacts };
   }
