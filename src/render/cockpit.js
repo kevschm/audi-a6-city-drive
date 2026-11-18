@@ -52,6 +52,9 @@ function gauge(shell, instruments, { x, y, radius, maximum, step, redline }) {
 
 export function createCockpit() {
   const shell = new Mesh(), hood = new Mesh(), instruments = new Mesh(), wheel = new Mesh(), needle = new Mesh();
+  const damagedScreen = new Mesh();
+  damagedScreen.quad([-0.74, 1.055, 1.10], [0.74, 1.055, 1.10],
+    [0.68, 1.415, 0.29], [-0.68, 1.415, 0.29], '#b3cede');
   const dashFront = [
     [-0.80, 0.940], [-0.65, 1.015], [-0.56, 1.114], [-0.36, 1.132],
     [-0.19, 1.072], [-0.11, 0.992], [0.49, 0.967], [0.79, 0.946],
@@ -136,7 +139,7 @@ export function createCockpit() {
   for (let i = 0; i < 4; i++) segmented(wheel, -0.027 + i * 0.018, -0.005, -0.042, 0.010, 0.012, 0, Math.PI * 2, '#b6b5ae', 'metal');
   needle.tri([-0.011, -0.003, 0], [-0.011, 0.003, 0], [0.069, 0, 0], '#f26f45');
   segmented(needle, 0, 0, -0.001, 0, 0.006, 0, Math.PI * 2, '#93513f');
-  return { shell, hood, instruments, wheel, needle };
+  return { shell, hood, instruments, wheel, needle, damagedScreen };
 }
 
 export function dialPose(body, x, y, z, angle) {

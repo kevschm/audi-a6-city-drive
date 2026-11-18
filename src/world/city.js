@@ -606,7 +606,7 @@ function station(mesh, obstacles, x, z, random) {
   footprint(obstacles, stopSignX - .05, stopSignZ - .05, stopSignX + .05, stopSignZ + .05, 'street-furniture');
 }
 
-function service(mesh, obstacles, x, z, random) {
+function service(mesh, obstacles, interactives, x, z, random) {
   building(mesh, obstacles, random, x + 5, z + 11, 27, 17, 1, 'modern', PALETTES[2], -1);
   ground(mesh, x - 19, z - 20, x + 19, z + 2, CURB + .01, '#636563', 'paving');
   mesh.box(x - 18, 4.65, z - 20, x + 18, 5.08, z - 7, '#566f63');
@@ -618,6 +618,29 @@ function service(mesh, obstacles, x, z, random) {
     mesh.cylY(x + dx, 1.84, z - 11.96, .19, 2.82, '#6d746c', 8);
     footprint(obstacles, x + dx - .74, z - 14.8, x + dx + .74, z - 11.65, 'street-furniture');
   }
+
+  ground(mesh, x - 29, z - 9, x - 10, z + 24, CURB + 0.003, '#6a6f6d', 'asphalt');
+  for (const offset of [-27, -12]) {
+    ground(mesh, x + offset, z - 6, x + offset + 0.11, z + 22, CURB + 0.009, '#b99b62');
+  }
+  for (let row = 0; row < 4; row++) {
+    const bay = z + 4 + row * 4.1;
+    ground(mesh, x - 28, bay, x - 21, bay + 0.12, CURB + 0.009, '#b99b62');
+  }
+  // Two ribbed storage containers frame a drive-through loading apron.
+  for (const offset of [-27.8, -12.5]) {
+    const left = x + offset;
+    mesh.box(left, CURB, z + 17, left + 2.48, 2.74, z + 24.1, '#515f58', 'metal');
+    for (let i = 0; i < 17; i++) {
+      const rib = z + 17.18 + i * 0.41;
+      mesh.box(left - 0.045, 0.31, rib, left + 2.53, 2.56, rib + 0.08, '#687469', 'metal');
+    }
+    footprint(obstacles, left, z + 17, left + 2.48, z + 24.1, 'street-furniture');
+  }
+  for (const [kind, across, along] of [
+    ['drum', -23.5, 11.8], ['drum', -23.5, 14.0], ['crate', -23.5, 16.1],
+    ['crate', -20.8, 16.5], ['cone', -25.0, 4.8], ['cone', -20.6, 5.2],
+  ]) interactives.push({ kind, x: x + across, z: z + along });
 }
 
 function sidewalk(mesh, x0, z0, x1, z1, paving) {
@@ -802,6 +825,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
   const districts = [];
   const signals = [];
   const streetLights = [];
+  const interactives = [];
 
   function meshAt(x, z, reach) {
     const key = `${Math.floor((x + EDGE) / 100)},${Math.floor((z + EDGE) / 100)}`;
@@ -869,9 +893,9 @@ export function buildCity({ Mesh, seed = 364844 }) {
     if (kind === 'park') park(mesh, obstacles, x, z);
     else if (kind === 'market') market(mesh, obstacles, x, z, random);
     else if (kind === 'station') station(mesh, obstacles, x, z, random);
-    else if (kind === 'service') service(mesh, obstacles, x, z, random);
+    else if (kind === 'service') service(mesh, obstacles, interactives, x, z, random);
     else neighborhood(mesh, obstacles, random, ix, iz, x, z, kind);
   }
 
-  return { landscape, cityChunks: [...chunks.values()], obstacles, districts, signals, streetLights };
+  return { landscape, cityChunks: [...chunks.values()], obstacles, districts, signals, streetLights, interactives };
 }

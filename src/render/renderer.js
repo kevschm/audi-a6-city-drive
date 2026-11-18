@@ -1,12 +1,12 @@
 import { basis, identity, intersectsFrustum, multiply, orthographic, perspective, unit, view } from './math.js';
-import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-080';
+import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-090';
 import { dentLimit } from '../simulation/vehicle-damage.js';
 
-export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5, lens: 6 };
+export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5, lens: 6, crackedScreen: 7 };
 export const GRAPHICS = {
   performance: { label: 'Performance', maxScale: 0.82, pixels: 780_000, far: 182, trafficDistance: 95 },
   balanced: { label: 'Balanced', maxScale: 1.45, pixels: 1_430_000, far: 265, trafficDistance: 135 },
-  quality: { label: 'Quality', maxScale: 1.58, pixels: 2_200_000, far: 320, trafficDistance: 165 },
+  quality: { label: 'Ultra', maxScale: 1.58, pixels: 2_200_000, far: 320, trafficDistance: 165 },
 };
 const daytimeSun = [-0.62, 0.58, -0.52];
 const eveningSun = [-0.81, 0.12, -0.58];
@@ -100,7 +100,7 @@ export function createRenderer(canvas) {
   const shader = source => 'precision ' + precision + ' float;\n' + source.replace('precision highp float;', '');
   const sky = pipeline(gl, shader(skyVertex), shader(skyFragment), ['Forward', 'Right', 'Up', 'Frame', 'Sun', 'Dusk']);
   const lit = pipeline(gl, shader(meshVertex), shader(meshFragment), [
-    'VP', 'Model', 'Light', 'Eye', 'Sun', 'Dusk', 'Tint', 'Contact', 'Style', 'Emission', 'Shadows', 'Texel',
+    'VP', 'Model', 'Light', 'Eye', 'Sun', 'Dusk', 'Tint', 'Contact', 'Style', 'Emission', 'Pane', 'Shadows', 'Texel',
     'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Dents', 'Rim', 'Street', 'Wet', 'MirrorPass', 'MirrorOn', 'MirrorVP', 'Mirror', 'Stride',
   ]);
   const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage', 'Dents', 'Rim']);
@@ -157,11 +157,12 @@ export function createRenderer(canvas) {
     return active;
   }
 
-  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage, dents, rim, stride = 0 }) {
+  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage, dents, rim, stride = 0, panes = intact }) {
     gl.uniformMatrix4fv(lit.Model, false, model);
     gl.uniform3fv(lit.Tint, tint);
     gl.uniform1f(lit.Style, style);
     gl.uniform1f(lit.Emission, emission);
+    if (style === MATERIAL.glass || style === MATERIAL.crackedScreen) gl.uniform4fv(lit.Pane, panes);
     litWasDamaged = setDeformation(lit, litWasDamaged, damage, dents, rim);
     gl.uniform1f(lit.Stride, stride);
     draw(mesh, true);
@@ -335,6 +336,7 @@ export function createRenderer(canvas) {
   return {
     upload: mesh => mesh.upload(gl),
     render,
+    invalidateShadows() { shadowKey = undefined; },
     get shadowMaps() { return Boolean(shadow); },
     get drawCalls() { return calls; },
   };

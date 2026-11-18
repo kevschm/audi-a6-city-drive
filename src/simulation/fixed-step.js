@@ -22,9 +22,10 @@ export function createFixedStepClock({
       accumulatedSeconds = 0;
     },
 
-    tick(timeMs, update) {
+    tick(timeMs, update, timeScale = 1) {
       if (!Number.isFinite(timeMs)) throw new TypeError('Timestamp must be finite');
       if (typeof update !== 'function') throw new TypeError('update must be a function');
+      if (!Number.isFinite(timeScale) || timeScale < 0 || timeScale > 1) throw new RangeError('Invalid time scale');
       if (previousMs === null) {
         previousMs = timeMs;
         return { updates: 0, interpolation: 0 };
@@ -39,7 +40,7 @@ export function createFixedStepClock({
       // No enormous simulation step after backgrounding.
       const elapsedSeconds = Math.min(maxFrameSeconds, Math.max(0, (timeMs - previousMs) / 1000));
       previousMs = timeMs;
-      accumulatedSeconds += elapsedSeconds;
+      accumulatedSeconds += elapsedSeconds * timeScale;
 
       let updates = 0;
       while (accumulatedSeconds + 1e-10 >= stepSeconds && updates < maxUpdatesPerFrame) {

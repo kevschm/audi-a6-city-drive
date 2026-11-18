@@ -1,3 +1,5 @@
+import { stepPedestrianRigs } from '../simulation/ragdoll.js';
+
 // Sidewalk and park paths around the station, marketplace and green squares.
 const paths = [
   [[11, -57], [11, -39]], [[11, -31], [11, -15]],
@@ -40,22 +42,38 @@ export function makeWalkers({ obstacles, heightAt, surfaceAt }) {
     });
   }
 
-  function step(dt, player) {
+  function step(dt, player, previous, props = []) {
+    stepPedestrianRigs(actors, dt, previous, player, heightAt, obstacles, props);
     for (const actor of actors) {
-      const clearance = Math.hypot(actor.x - player.x, actor.z - player.z);
-      actor.moving = clearance > 4 || Math.abs(player.speed) < 0.3;
-      if (actor.moving) actor.progress += actor.direction * actor.pace * dt / actor.length;
+      if (actor.rig) continue;
+      const dx = actor.x - player.x, dz = actor.z - player.z;
+      const clearance = Math.hypot(dx, dz);
+      const speed = Math.hypot(player.vx || 0, player.vz || 0);
+      const ahead = (dx * (player.vx || 0) + dz * (player.vz || 0)) / Math.max(0.1, speed);
+      const danger = speed > 2.4 && ahead > 0 && ahead < 12 && clearance ** 2 - ahead ** 2 < 7.3;
+      if (danger && clearance > 1) {
+        const away = actor.dx * dx + actor.dz * dz;
+        actor.direction = away >= 0 ? 1 : -1;
+      }
+      const atEnd = actor.direction < 0 ? actor.progress <= 0 : actor.progress >= 1;
+      const pace = actor.pace * (danger ? 2.25 : 1);
+      actor.moving = !danger || !atEnd;
+      if (actor.moving) actor.progress += actor.direction * pace * dt / actor.length;
       if (actor.progress <= 0 || actor.progress >= 1) {
-        actor.direction *= -1;
+        if (!danger) actor.direction *= -1;
         actor.progress = Math.max(0, Math.min(1, actor.progress));
       }
       actor.x = actor.baseX + actor.dx * actor.progress;
       actor.z = actor.baseZ + actor.dz * actor.progress;
       actor.y = heightAt(actor.x, actor.z);
       actor.heading = actor.angle + (actor.direction < 0 ? Math.PI : 0);
-      if (actor.moving) actor.phase += dt * actor.pace * 7.7;
+      if (actor.moving) actor.phase += dt * pace * 7.7;
     }
   }
   step(0, { x: 1000, z: 1000, speed: 0 });
-  return { actors, step };
+  function reset() {
+    for (const actor of actors) actor.rig = null;
+    step(0, { x: 1000, z: 1000 });
+  }
+  return { actors, step, reset };
 }

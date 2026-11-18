@@ -1,14 +1,13 @@
 import { moveVehicle } from './vehicle-collision.js';
-import { availablePower, dentLimit } from './vehicle-damage.js';
+import { VEHICLE_MASS as MASS, VEHICLE_YAW_INERTIA as YAW_INERTIA } from './contact-impulse.js';
+import { availablePower, createDamageState, updateMechanicalDamage } from './vehicle-damage.js';
 import { HALF_TRACK, TIRE_RADIUS, WHEELBASE, WHEEL_CONTACTS, stepSuspension, wheelSurfaceAt } from './vehicle-suspension.js';
 export { vehicleOverlapsTraffic } from './vehicle-collision.js';
 
-const MASS = 1575;
 const GRAVITY = 9.81;
 const FRONT_WEIGHT_FRACTION = 0.60;
 const FRONT_AXLE = WHEELBASE * (1 - FRONT_WEIGHT_FRACTION);
 const REAR_AXLE = WHEELBASE * FRONT_WEIGHT_FRACTION;
-const YAW_INERTIA = 2650;
 const CG_HEIGHT = 0.54;
 const FINAL_DRIVE = 4.03;
 const RATIOS = [3.56, 2.15, 1.43, 1.08, 0.84];
@@ -36,8 +35,7 @@ export function createVehicleState() {
     throttle: 0, gearIndex: 0, shiftTimer: 0, rpm: IDLE_RPM, gear: 'N', reverseArmed: true,
     road: true, surface: 'asphalt', brakeLights: false, reverseLights: false,
     collisionImpact: 0, skid: 0, longitudinalAccel: 0, lateralAccel: 0,
-    damage: [0, 0, 0, 0], dents: new Float32Array(4 * dentLimit),
-    wheelDamage: [0, 0, 0, 0], axleDamage: [0, 0], impact: null,
+    mass: MASS, inertia: YAW_INERTIA, ...createDamageState(), impact: null,
   };
 }
 
@@ -60,7 +58,8 @@ function updateGearbox(car, speed, throttle, reverse, braking, dt) {
   const ratio = reverse ? REVERSE_RATIO : RATIOS[car.gearIndex];
   const coupledRpm = wheelToCrank(speed, ratio);
   const converterRpm = IDLE_RPM + throttle * 2190 * (1 - clamp(Math.abs(speed) / 10, 0, 1));
-  car.rpm = follow(car.rpm, clamp(Math.max(coupledRpm, converterRpm), IDLE_RPM, REDLINE), 10, dt);
+  const targetRpm = car.mechanical.stalled ? 0 : clamp(Math.max(coupledRpm, converterRpm), IDLE_RPM, REDLINE);
+  car.rpm = follow(car.rpm, targetRpm, 10, dt);
   car.gear = reverse ? 'R' : Math.abs(speed) < 0.08 && throttle === 0 ? 'N' : `D${car.gearIndex + 1}`;
   return ratio;
 }
@@ -116,7 +115,7 @@ export function stepVehicle(car, input, dt, world = {}) {
   const reverseDrive = requestedBrake > 0 && car.reverseArmed && !requestedThrottle && !handbrake;
   const reverse = reverseDrive || (car.reverseLights && longitudinal < -0.11);
   const serviceBrake = Math.max(reverseDrive ? 0 : requestedBrake, longitudinal < -0.12 ? requestedThrottle : 0);
-  const driveCommand = serviceBrake > 0 ? 0 : reverseDrive ? requestedBrake : requestedThrottle;
+  const driveCommand = serviceBrake > 0 || car.mechanical.stalled ? 0 : reverseDrive ? requestedBrake : requestedThrottle;
   car.throttle = follow(car.throttle, driveCommand, driveCommand > car.throttle ? 8.8 : 13, dt);
   car.brakeLights = serviceBrake > 0 || handbrake > 0;
   car.reverseLights = reverse;
@@ -148,10 +147,10 @@ export function stepVehicle(car, input, dt, world = {}) {
   const shiftPower = car.shiftTimer > 0 ? mix(1, 0.36, clamp(car.shiftTimer / 0.18, 0, 1)) : 1;
   const reversePower = reverseDrive ? -0.64 * (1 - clamp(speed / 9, 0, 1) ** 4) : 1;
   const traction = driveCommand > 0 ? car.throttle * reversePower * engineTorque(car.rpm) *
-    ratio * FINAL_DRIVE * 0.87 * shiftPower * availablePower(car.damage) / TIRE_RADIUS : 0;
+    ratio * FINAL_DRIVE * 0.87 * shiftPower * availablePower(car.damage, car.mechanical) / TIRE_RADIUS : 0;
 
   const direction = Math.sign(longitudinal);
-  const brakeForce = Math.min(MASS * 11.5 * serviceBrake, MASS * speed / dt);
+  const brakeForce = Math.min(MASS * 11.5 * serviceBrake * (1 - car.mechanical.brakes * 0.55), MASS * speed / dt);
   const rearBrake = Math.min(MASS * 5.4 * handbrake, MASS * speed / dt);
   const frontLong = clamp(traction - direction * brakeForce * 0.68, -frontGrip, frontGrip);
   const rearLong = clamp(-direction * (brakeForce * 0.32 + rearBrake), -rearGrip, rearGrip);
@@ -202,4 +201,5 @@ export function stepVehicle(car, input, dt, world = {}) {
   if (car.collisionImpact > 0.7) car.pitchRate += clamp((nextLong - car.speed) * 0.035, -0.55, 0.55);
   car.spin += car.speed * dt / TIRE_RADIUS;
   stepSuspension(car, world, SURFACES, surface, handbrake, dt);
+  updateMechanicalDamage(car, dt);
 }

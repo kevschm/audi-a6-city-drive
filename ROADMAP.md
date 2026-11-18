@@ -1,5 +1,11 @@
 # Entwicklungsstand und offene Arbeiten
 
+## Version 0.9
+
+Sieben reproduzierbare Szenarien im Crashlabor mit einstellbarem Starttempo, Streckenkamera, Zeitlupe und Telemetrie. Der Kontaktlöser berücksichtigt relative Geschwindigkeit am Kontaktpunkt, Masse, Gierträgheit und materialabhängige Reibung und Restitution. Fahrzeuge übertragen Impulse im Stadtverkehr und in der Kettenkollision.
+
+Kollisionen können Stoßfänger oder Spiegel ablösen, Scheiben beschädigen, Kühlung und Bremsen schwächen und den Motor zum Stillstand bringen. Lose Fahrzeugelemente, Fässer, Kisten und Kegel bewegen sich mit Schwerkraft und können weitere Objekte treffen. Der Betriebshof hat einen interaktiven Ladebereich. Fußgänger weichen auf ihren Wegen aus und können in eine nicht-grafische Gelenksimulation wechseln. Die gleiche Gelenksimulation bewegt den Dummy.
+
 ## Version 0.8
 
 Der Avant hat einen stärker profilierten Kühlergrill, überarbeitete Streuscheiben, separate Scheinwerferwaschdüsen und eine ausgeformte untere Stoßfängerkante. Im Cockpit ergänzen ein Vier-Speichen-Lenkrad, beschriftete Rundinstrumente, Kassettenradio, Klimabedienung und prozedurales Holzdekor die Fahreransicht.
@@ -29,6 +35,6 @@ Die 60-Hz-Fahrphysik liest die Straßenhöhe an vier Radpositionen. Bordsteine, 
 ## Nächste Ausbauschritte
 
 - Auf einem Galaxy S24+ über längere Fahrten Frametimes und Thermik messen und Grafikstufen damit einstellen.
-- Weitere Aktivitäten für Parken und Erkundung erproben.
-- Weitere städtebauliche Varianten, Geländeprofile und Fernsicht ergänzen.
-- Eine Pipeline für glTF und lizenzierte PBR-Texturen mit dem vorhandenen Renderer vergleichen. Eine Starrkörper-Engine anhand geneigter Straßen und beweglicher Hindernisse bewerten.
+- Räumliche Fahrzeugkontakte für Rampen und Überschläge, Reifenverlust und Aufzeichnung für Wiederholungen entwickeln.
+- Weitere Stadtviertel und Fußgängerquerungen mit Ampelsteuerung ergänzen.
+- Eine Pipeline für glTF und lizenzierte PBR-Texturen mit dem vorhandenen Renderer vergleichen. Rapier für geneigte Straßen und vollständige Kollisionskörper evaluieren.

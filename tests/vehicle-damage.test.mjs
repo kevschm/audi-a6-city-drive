@@ -69,7 +69,8 @@ test('side and rear contacts select individual wheels in vehicle space', () => {
   const rear = collide(0, -19, { x0: 0.63, x1: 0.91, z0: -2.70, z1: -2.50 });
   assert.equal(side.impact.area, 3);
   assert.equal(side.impact.wheel, 1);
-  assert.ok(side.wheelDamage[1] > 0.55 && side.axleDamage[0] > 0.3);
+  assert.ok(side.wheelDamage[1] > 0.34 && side.axleDamage[0] > 0.22);
+  assert.deepEqual(side.wheelDamage.filter((_, i) => i !== 1), [0, 0, 0]);
   assert.equal(rear.impact.wheel, 3);
   assert.ok(rear.axleDamage[1] > 0.22);
   assert.equal(rear.axleDamage[0], 0);

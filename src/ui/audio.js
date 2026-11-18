@@ -112,6 +112,7 @@ export function createDriveAudio() {
     if (!ctx || ctx.state !== 'running') return;
     const now = ctx.currentTime;
     const rpm = car.rpm || 850;
+    const engineRunning = running && !car.mechanical.stalled;
     const speed = Math.abs(car.speed);
     const pulse = rpm * 3 / 60;
     const load = car.shiftTimer > 0.09 ? car.throttle * 0.3 : car.throttle;
@@ -122,9 +123,9 @@ export function createDriveAudio() {
     exhaust.frequency.setTargetAtTime(pulse * 0.502, now, 0.069);
     engineBody.frequency.setTargetAtTime(92 + rpm * 0.013, now, 0.095);
     engineFilter.frequency.setTargetAtTime((188 + rpm * 0.093 + load * 372) * (hood ? 1.2 : 0.80), now, 0.078);
-    engineGain.gain.setTargetAtTime(running ? 0.032 + load * 0.106 + rpm * 0.000005 : 0, now, 0.067);
+    engineGain.gain.setTargetAtTime(engineRunning ? 0.032 + load * 0.106 + rpm * 0.000005 : 0, now, 0.067);
     intakeFilter.frequency.setTargetAtTime(320 + rpm * 0.14, now, 0.065);
-    intakeGain.gain.setTargetAtTime(running ? load ** 1.25 * (hood ? 0.18 : 0.12) + 0.025 * car.damage[0] : 0, now, 0.08);
+    intakeGain.gain.setTargetAtTime(engineRunning ? load ** 1.25 * (hood ? 0.18 : 0.12) + 0.025 * car.damage[0] : 0, now, 0.08);
     roadFilter.frequency.setTargetAtTime((paving ? 206 : grass ? 139 : 165) + speed * (grass ? 10 : 22 + wet * 35), now, 0.14);
     roadGain.gain.setTargetAtTime(running ? Math.min(speed * (paving ? 0.0052 : 0.0026 + 0.0023 * wet), 0.13) : 0, now, 0.15);
     const wheelPulse = Math.min(speed * 0.009, 0.13) * wheelDamage;
@@ -157,13 +158,17 @@ export function createDriveAudio() {
     burst.start(now, Math.random() * 0.8, duration + 0.025);
   }
 
-  function impact({ closingSpeed, scrapeSpeed, localX, wheelChange }) {
+  function impact({ closingSpeed, scrapeSpeed, localX, wheelChange, glassBreak, detached, material, deltaV }) {
     if (!ctx || ctx.state !== 'running' || !enabled) return;
-    const strength = Math.min(1, closingSpeed / 17);
+    const strength = Math.min(1, closingSpeed / 22);
+    const weight = Math.min(1, Math.max(0.14, deltaV / 9));
     const pan = localX * 0.60;
     if (wheelChange > 0.10) noiseBurst('bandpass', 282, wheelChange * 0.96, 0.22, 1.6, pan);
-    noiseBurst('lowpass', 137 + strength * 91, 0.13 + strength * 0.74, 0.17 + strength * 0.21, 0.76, pan);
-    noiseBurst('bandpass', 620 + strength * 890, 0.05 + strength * 0.51, 0.10 + strength * 0.15, 1.65, pan);
+    const bodyResonance = material === 'steel' ? 1380 : material === 'plastic' ? 650 : material === 'wood' ? 400 : 820;
+    noiseBurst('lowpass', 137 + strength * 91, (0.13 + strength * 0.74) * weight, 0.17 + strength * 0.21, 0.76, pan);
+    noiseBurst('bandpass', bodyResonance + strength * 500, (0.08 + strength * 0.42) * Math.sqrt(weight), 0.10 + strength * 0.15, 1.65, pan);
+    if (glassBreak) noiseBurst('highpass', 3600, 0.40, 0.34, 0.9, pan);
+    if (detached >= 0) noiseBurst('bandpass', 710, 0.22, 0.44, 2.3, pan);
     if (scrapeSpeed > 2 || strength > 0.24) {
       noiseBurst('bandpass', 1960 + strength * 810, 0.07 + Math.min(0.34, scrapeSpeed * 0.016 + strength * 0.21),
         0.15 + Math.min(0.26, scrapeSpeed * 0.012), 3.5, pan);

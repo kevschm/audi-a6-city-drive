@@ -98,6 +98,12 @@ vec3 dent(vec3 p, out float distress, out vec2 normalShift) {
     float crease = 0.81 + 0.19 * sin(19.0 * dot(delta, inward.yx) + p.y * 11.0);
     moved.xz += inward * force * envelope * crease * (bumper ? 0.55 : 0.39);
     moved.y -= force * envelope * 0.11 * sin(p.y * 8.0 + 1.5);
+    if (bumper) {
+      float fold = max(0.0, hit.z - 0.28) * max(0.0, 1.0 - dot(scaled * vec2(1.0, 0.73), scaled * vec2(1.0, 0.73)));
+      float deck = smoothstep(0.72, 0.96, p.y) * (1.0 - smoothstep(1.03, 1.15, p.y));
+      moved.y += fold * deck * (0.10 + 0.14 * sin(abs(delta.y) * 6.4));
+      normalShift.y += inward.y * fold * deck * 0.66;
+    }
     normalShift -= scaled * force * envelope * 0.87;
   }
   distress = min(1.0, distress);
@@ -150,6 +156,7 @@ uniform vec3 uTint;
 uniform vec3 uContact;
 uniform float uStyle;
 uniform float uEmission;
+uniform vec4 uPane;
 uniform float uShadows;
 uniform float uTexel;
 uniform float uDetail;
@@ -268,12 +275,27 @@ vec3 displayColor(vec3 linear) {
   return pow(linear / (0.86 + 0.25 * linear), vec3(0.455));
 }
 
+float crackPattern(vec2 uv, float severity) {
+  float radius = length(uv);
+  float a = atan(uv.y, uv.x + 0.00001);
+  float branch = abs(sin(a * 7.0 + sin(a * 3.0) + radius * 5.5));
+  float spokes = 1.0 - smoothstep(0.075, 0.23, branch);
+  float rings = 1.0 - smoothstep(0.015, 0.095, abs(fract(radius * 5.8 + sin(a * 6.0) * 0.18) - 0.5));
+  return max(spokes, rings * 0.67) * (1.0 - smoothstep(severity * 0.26, 0.28 + severity, radius));
+}
+
 void main() {
   if (uMirrorPass > 0.5 && vWorld.y < 0.045) discard;
   if (uStyle > 3.5 && uStyle < 4.5) {
     vec2 oval = vLocal.xz / vec2(1.35, 2.85);
     float alpha = 0.47 * (1.0 - smoothstep(0.22, 1.0, length(oval)));
     gl_FragColor = vec4(0.05, 0.07, 0.09, alpha);
+    return;
+  }
+  if (uStyle > 6.5) {
+    vec2 uv = vec2((vLocal.x - uPane.y) * 1.75, (vLocal.y - 1.10) * 4.0);
+    float cracks = crackPattern(uv, uPane.x);
+    gl_FragColor = vec4(vec3(0.78, 0.86, 0.88), cracks * min(0.82, uPane.x * 1.38));
     return;
   }
   vec3 n = normalize(vNormal);
@@ -290,6 +312,14 @@ void main() {
     * mix(vec3(1.0), vec3(0.40, 0.46, 0.61), uDusk);
   vec3 sunLight = mix(vec3(1.07, 0.88, 0.67), vec3(0.74, 0.39, 0.20), uDusk);
   vec3 baseColor = max(vColor * uTint, vec3(0.0));
+  if (uStyle > 1.5 && uStyle < 2.5 && dot(uPane, vec4(1.0)) > 0.01) {
+    float side = smoothstep(0.55, 0.82, abs(vLocal.x));
+    float severity = mix(vLocal.z > 0.15 ? uPane.x : uPane.y, vLocal.x < 0.0 ? uPane.z : uPane.w, side);
+    vec2 uv = vec2(mix(vLocal.x + 0.16, fract(vLocal.z * 0.8) - 0.5, side) * 2.2, (vLocal.y - 1.16) * 4.0);
+    float cracks = crackPattern(uv, severity) * smoothstep(0.07, 0.32, severity);
+    if (severity > 0.73 && side > 0.85 && cracks < 0.31) discard;
+    baseColor = mix(baseColor, vec3(0.66, 0.74, 0.76), cracks * 0.85);
+  }
   if (vDistress > 0.03) {
     float scoring = noise2(vLocal.xz * vec2(33.0, 20.0) + vLocal.y * 32.0);
     float abrasion = smoothstep(0.57, 0.82, scoring) * vDistress;
@@ -437,11 +467,13 @@ void main() {
   float radial = length(gl_PointCoord * 2.0 - 1.0);
   float edge = 1.0 - smoothstep(0.13, 1.0, radial);
   float spark = step(0.92, vAppearance.y);
+  float shard = step(0.78, vAppearance.y) * (1.0 - spark);
   float vapor = step(0.19, vAppearance.y);
   vec3 rgb = mix(vec3(0.61, 0.56, 0.49), vec3(0.78, 0.82, 0.86), vapor);
   rgb = mix(rgb, vec3(1.0, 0.69, 0.28), spark);
   float opacity = mix(0.24, 0.18, vapor);
-  gl_FragColor = vec4(rgb, edge * vAppearance.x * mix(opacity, 1.0, spark));
+  rgb = mix(rgb, vec3(0.67, 0.85, 0.88), shard);
+  gl_FragColor = vec4(rgb, edge * vAppearance.x * mix(opacity, 1.0, max(spark, shard * 0.8)));
 }
 `;
 
