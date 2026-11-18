@@ -23,6 +23,20 @@ function advance(traffic, seconds, player = outside) {
   }
 }
 
+test('restarting the time trial restores the traffic and signal phases in place', () => {
+  const traffic = makeTraffic(roads, city.signals);
+  const snapshot = traffic.actors.map(actor => ({ ...actor }));
+  const phase = traffic.signalColor(0, 0, 0);
+  advance(traffic, 13);
+  assert.notEqual(traffic.signalColor(0, 0, 0), phase);
+  assert.notDeepEqual(traffic.actors, snapshot);
+  const actors = traffic.actors;
+  traffic.restart();
+  assert.equal(traffic.actors, actors);
+  assert.deepEqual(traffic.actors, snapshot);
+  assert.equal(traffic.signalColor(0, 0, 0), phase);
+});
+
 test('traffic stays in the right-hand lanes and the player can leave the actual spawn', () => {
   const traffic = makeTraffic(roads, city.signals);
   const player = { ...createVehicleState(), ...startPosition };

@@ -1,10 +1,9 @@
 import { moveVehicle } from './vehicle-collision.js';
+import { HALF_TRACK, TIRE_RADIUS, WHEELBASE, WHEEL_CONTACTS, stepSuspension, wheelSurfaceAt } from './vehicle-suspension.js';
 export { vehicleOverlapsTraffic } from './vehicle-collision.js';
 
 const MASS = 1575;
 const GRAVITY = 9.81;
-const WHEELBASE = 2.69;
-const TIRE_RADIUS = 0.315;
 const FRONT_WEIGHT_FRACTION = 0.60;
 const FRONT_AXLE = WHEELBASE * (1 - FRONT_WEIGHT_FRACTION);
 const REAR_AXLE = WHEELBASE * FRONT_WEIGHT_FRACTION;
@@ -31,9 +30,11 @@ export function createVehicleState() {
   return {
     x: 0, z: 0, heading: 0, vx: 0, vz: 0, speed: 0, yaw: 0, steer: 0, spin: 0, km: 0,
     roll: 0, pitch: 0, heave: 0, rollRate: 0, pitchRate: 0, heaveRate: 0,
+    wheelTravel: [0, 0, 0, 0], wheelVelocity: [0, 0, 0, 0], wheelGround: [0, 0, 0, 0],
+    wheelSteer: [0, 0, 0, 0], wheelSpin: [0, 0, 0, 0],
     throttle: 0, gearIndex: 0, shiftTimer: 0, rpm: IDLE_RPM, gear: 'N', reverseArmed: true,
     road: true, surface: 'asphalt', brakeLights: false, reverseLights: false,
-    collisionImpact: 0, skid: 0, longitudinalAccel: 0,
+    collisionImpact: 0, skid: 0, longitudinalAccel: 0, lateralAccel: 0,
   };
 }
 
@@ -74,26 +75,20 @@ function surfaceAt(car, { roadSurfaceAt, roads = [] }) {
   return 'grass';
 }
 
-function suspension(car, position, rate, target, frequency, damping, dt) {
-  car[rate] += ((target - car[position]) * frequency ** 2 - car[rate] * 2 * damping * frequency) * dt;
-  car[position] += car[rate] * dt;
-}
-
-function updateBody(car, surface, lateralAccel, dt) {
-  const bumpSpeed = clamp(Math.abs(car.speed) / 8, 0, 1);
-  const bumps = Math.sin(car.x * 2.0 + car.z * 1.57) + 0.42 * Math.sin(car.x * 4.7 - car.z * 3.1);
-  const targetHeave = surface.roughness * bumps * bumpSpeed;
-  const targetPitch = clamp(-car.longitudinalAccel * 0.0042, -0.039, 0.055);
-  const targetRoll = clamp(lateralAccel * 0.0081, -0.088, 0.088);
-  suspension(car, 'heave', 'heaveRate', targetHeave, 16, 0.60, dt);
-  suspension(car, 'pitch', 'pitchRate', targetPitch, 11, 0.66, dt);
-  suspension(car, 'roll', 'rollRate', targetRoll, 9, 0.72, dt);
-}
-
 function tireLateralForce(slip, stiffness, grip, longitudinal) {
   // Longitudinal forces leave less of the friction circle for cornering.
   const lateralBudget = Math.sqrt(Math.max(0, grip * grip - longitudinal * longitudinal));
   return lateralBudget > 0 ? -lateralBudget * Math.tanh(stiffness * slip / lateralBudget) : 0;
+}
+
+function axleSurfaceGrip(car, surfaceAt, fallbackSurface, leftWeight, sin, cos, axle) {
+  if (!surfaceAt) return fallbackSurface.grip;
+  const left = WHEEL_CONTACTS[axle * 2], right = WHEEL_CONTACTS[axle * 2 + 1];
+  const axleX = car.x + sin * left[1];
+  const axleZ = car.z + cos * left[1];
+  const leftGrip = wheelSurfaceAt(surfaceAt, axleX + cos * left[0], axleZ - sin * left[0], SURFACES, fallbackSurface).grip;
+  const rightGrip = wheelSurfaceAt(surfaceAt, axleX + cos * right[0], axleZ - sin * right[0], SURFACES, fallbackSurface).grip;
+  return mix(rightGrip, leftGrip, leftWeight);
 }
 
 export function stepVehicle(car, input, dt, world = {}) {
@@ -125,14 +120,19 @@ export function stepVehicle(car, input, dt, world = {}) {
 
   const steering = clamp(input.steer ?? pedal(input.right) - pedal(input.left), -1, 1);
   const steerLimit = (0.53 + 0.009 * speed) / (1 + (speed / 10) ** 1.65);
-  car.steer = follow(car.steer, steering * steerLimit, steering === 0 ? 6.8 : 5.6, dt);
+  const centering = steering === 0 || steering * car.steer < 0;
+  const steerRate = centering ? 8.1 : mix(6.6, 5.3, clamp(speed / 26, 0, 1));
+  car.steer = follow(car.steer, steering * steerLimit, steerRate, dt);
   const steerSin = Math.sin(car.steer), steerCos = Math.cos(car.steer);
 
   const loadTransfer = clamp(MASS * car.longitudinalAccel * CG_HEIGHT / WHEELBASE, -3700, 3700);
   const frontLoad = MASS * GRAVITY * FRONT_WEIGHT_FRACTION - loadTransfer;
   const rearLoad = MASS * GRAVITY - frontLoad;
-  const frontGrip = frontLoad * surface.grip * 0.96;
-  const rearGrip = rearLoad * surface.grip;
+  // Lateral load transfer places grip priority on the outside wheels. This
+  // matters when one side rides on paving or grass and the other on asphalt.
+  const leftWeight = 0.5 + clamp(car.lateralAccel * CG_HEIGHT / (2 * GRAVITY * HALF_TRACK), -0.32, 0.32);
+  const frontGrip = frontLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 0) * 0.96;
+  const rearGrip = rearLoad * axleSurfaceGrip(car, world.roadSurfaceAt, surface, leftWeight, sin, cos, 1);
   const shiftPower = car.shiftTimer > 0 ? mix(1, 0.23, clamp(car.shiftTimer / 0.20, 0, 1)) : 1;
   const reversePower = reverseDrive ? -0.64 * (1 - clamp(speed / 9, 0, 1) ** 4) : 1;
   const traction = driveCommand > 0 ? car.throttle * reversePower * engineTorque(car.rpm) *
@@ -150,26 +150,34 @@ export function stepVehicle(car, input, dt, world = {}) {
   // A front-heavy two-axle bicycle model. Below walking speed the dynamic
   // slip angles become ill-conditioned, so blend with steering geometry.
   const speedForSlip = Math.max(speed, 2.5);
-  const frontSlip = Math.atan2(lateral + FRONT_AXLE * car.yaw, speedForSlip) - car.steer * direction;
+  const frontLateral = lateral + FRONT_AXLE * car.yaw;
+  const frontRolling = longitudinal * steerCos + frontLateral * steerSin;
+  const frontSlip = Math.atan2(frontLateral * steerCos - longitudinal * steerSin, Math.max(2.5, Math.abs(frontRolling)));
   const rearSlip = Math.atan2(lateral - REAR_AXLE * car.yaw, speedForSlip);
   const frontLat = tireLateralForce(frontSlip, 58_000, frontGrip, frontLong);
   const rearLat = tireLateralForce(rearSlip, 55_000 * (1 - 0.73 * handbrake), rearGrip, rearLong);
   const dynamicWeight = clamp((speed - 1.5) / 3.2, 0, 1);
   const lateralAccel = (frontLat * steerCos + frontLong * steerSin + rearLat) / MASS;
-  const longAccel = (frontLong * steerCos - frontLat * steerSin + rearLong - resistance) / MASS;
-  let nextLong = longitudinal + (longAccel + car.yaw * lateral * dynamicWeight) * dt;
+  const [frontLeft, frontRight, rearLeft, rearRight] = car.wheelGround;
+  const grade = clamp((rearLeft + rearRight - frontLeft - frontRight) / (2 * WHEELBASE), -0.22, 0.22);
+  const longAccel = (frontLong * steerCos - frontLat * steerSin + rearLong - resistance) / MASS +
+    GRAVITY * grade * clamp(speed / 1.5, 0, 1);
+  let nextLong = longitudinal + longAccel * dt;
   if (driveCommand === 0 && longitudinal * nextLong < 0) nextLong = 0;
   car.longitudinalAccel = follow(car.longitudinalAccel, longAccel, 11, dt);
 
   const dynamicYaw = car.yaw + ((frontLat * steerCos + frontLong * steerSin) * FRONT_AXLE - rearLat * REAR_AXLE) / YAW_INERTIA * dt;
   const bicycleYaw = nextLong * Math.tan(car.steer) / WHEELBASE;
   car.yaw = mix(follow(car.yaw, bicycleYaw, 12, dt), dynamicYaw, dynamicWeight);
-  const slipVelocity = mix(follow(lateral, bicycleYaw * REAR_AXLE, 15, dt),
-    lateral + (lateralAccel - car.yaw * nextLong) * dt, dynamicWeight);
   const nextHeading = car.heading + car.yaw * dt;
   const nextSin = Math.sin(nextHeading), nextCos = Math.cos(nextHeading);
-  car.vx = nextLong * nextSin + slipVelocity * nextCos;
-  car.vz = nextLong * nextCos - slipVelocity * nextSin;
+  const crawlSlip = follow(lateral, bicycleYaw * REAR_AXLE, 15, dt);
+  const dynamicSlip = lateral + lateralAccel * dt;
+  // Integrate tire forces in the current world orientation. Turning the
+  // chassis does not rotate the car's momentum with it.
+  car.vx = mix(nextLong * nextSin + crawlSlip * nextCos, nextLong * sin + dynamicSlip * cos, dynamicWeight);
+  car.vz = mix(nextLong * nextCos - crawlSlip * nextSin, nextLong * cos - dynamicSlip * sin, dynamicWeight);
+  car.lateralAccel = follow(car.lateralAccel, mix(car.yaw * nextLong, lateralAccel, dynamicWeight), 12, dt);
 
   const frontUse = Math.hypot(frontLong, frontSlip * 58_000) / frontGrip;
   const rearUse = Math.hypot(rearLong, rearSlip * 55_000) / rearGrip;
@@ -178,6 +186,7 @@ export function stepVehicle(car, input, dt, world = {}) {
 
   moveVehicle(car, dt, world);
   car.speed = car.vx * Math.sin(car.heading) + car.vz * Math.cos(car.heading);
+  if (car.collisionImpact > 0.7) car.pitchRate += clamp((nextLong - car.speed) * 0.035, -0.55, 0.55);
   car.spin += car.speed * dt / TIRE_RADIUS;
-  updateBody(car, surface, mix(car.yaw * car.speed, lateralAccel, dynamicWeight), dt);
+  stepSuspension(car, world, SURFACES, surface, handbrake, dt);
 }

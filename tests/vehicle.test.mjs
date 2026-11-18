@@ -99,6 +99,81 @@ test('grass weakens traction and a steering handbrake slide is stronger than coa
   assert.ok(handbrake.yaw > coasting.yaw);
 });
 
+test('wheels follow a curb independently and the body settles after descending', () => {
+  const car = createVehicleState();
+  car.vz = 3.1;
+  const curb = { ...openRoad, groundHeightAt: (x, z) => x > 0.65 && z > 3 && z < 6 ? 0.16 : 0 };
+  drive(car, {}, 52 * dt, curb);
+
+  const [frontLeft, frontRight, rearLeft, rearRight] = car.wheelTravel;
+  assert.ok(frontRight > 0.15 && frontRight < 0.17);
+  assert.ok([frontLeft, rearLeft, rearRight].every((height) => Math.abs(height) < 0.004));
+  assert.ok(car.heave > 0.03 && car.heave < 0.055);
+  assert.ok(car.pitch < -0.02 && car.roll > 0.04);
+
+  drive(car, {}, 1.15, curb);
+  assert.ok(car.wheelTravel[3] > 0.15);
+  drive(car, { throttle: 0.18 }, 3, curb);
+  assert.ok(car.z > 8);
+  assert.ok(car.wheelTravel.every((height) => Math.abs(height) < 0.006));
+  assert.ok(Math.abs(car.heave) < 0.006 && Math.abs(car.roll) < 0.02);
+});
+
+test('front tire contact gives mixed surfaces intermediate traction', () => {
+  const asphalt = createVehicleState();
+  const grass = createVehicleState();
+  const split = createVehicleState();
+  drive(asphalt, { throttle: 1 }, 3);
+  drive(grass, { throttle: 1 }, 3, { ...openRoad, roadSurfaceAt: () => 'grass' });
+  drive(split, { throttle: 1 }, 3, { ...openRoad, roadSurfaceAt: (x) => x < -0.25 ? 'grass' : 'asphalt' });
+  assert.equal(split.surface, 'asphalt');
+  assert.ok(grass.speed < split.speed - 1 && split.speed < asphalt.speed - 1);
+});
+
+test('inner front wheel steers more and handbrake stops rear wheel rotation', () => {
+  const car = createVehicleState();
+  car.vz = 5;
+  drive(car, { right: 1 }, 0.35);
+  assert.ok(car.wheelSteer[1] > car.wheelSteer[0] && car.wheelSteer[0] > 0);
+  assert.ok(car.wheelSpin[2] > car.wheelSpin[3]);
+  assert.equal(car.wheelSteer[2], 0);
+  assert.equal(car.wheelSteer[3], 0);
+  const spin = [...car.wheelSpin];
+  drive(car, { handbrake: 1 }, 0.25);
+  assert.ok(car.wheelSpin[0] > spin[0]);
+  assert.deepEqual(car.wheelSpin.slice(2), spin.slice(2));
+});
+
+test('quick 70 km/h steering reversals recenter promptly and mirror left and right', () => {
+  const right = createVehicleState(), left = createVehicleState();
+  right.vz = left.vz = 70 / 3.6;
+  for (let tick = 0; tick < 180; tick++) {
+    const steer = tick < 30 ? 0 : tick < 60 ? 1 : tick < 100 ? -1 : 0;
+    stepVehicle(right, { steer }, dt, openRoad);
+    stepVehicle(left, { steer: -steer }, dt, openRoad);
+    if (tick === 65) assert.ok(right.steer < 0 && left.steer > 0);
+    assert.ok(Math.abs(right.yaw) < 0.8 && Math.abs(left.yaw) < 0.8);
+  }
+  assert.ok(Math.abs(right.x + left.x) < 1e-9);
+  assert.ok(Math.abs(right.z - left.z) < 1e-9);
+  assert.ok(Math.abs(right.heading + left.heading) < 1e-9);
+  assert.ok(right.speed > 17 && Math.abs(right.yaw) < 0.03);
+});
+
+test('analog steering preserves partial and opposing inputs', () => {
+  const full = createVehicleState(), partial = createVehicleState(), opposing = createVehicleState();
+  drive(full, { right: 1 }, 0.5);
+  drive(partial, { right: 0.4 }, 0.5);
+  drive(opposing, { right: 0.7, left: 0.3 }, 0.5);
+  assert.ok(Math.abs(partial.steer - full.steer * 0.4) < 1e-9);
+  assert.ok(Math.abs(partial.steer - opposing.steer) < 1e-9);
+
+  const lightThrottle = createVehicleState(), fullThrottle = createVehicleState();
+  drive(lightThrottle, { throttle: 0.3 }, 1);
+  drive(fullThrottle, { throttle: 1 }, 1);
+  assert.ok(lightThrottle.speed > 0 && lightThrottle.speed < fullThrottle.speed * 0.6);
+});
+
 test('swept footprint catches a thin central obstacle even between the four corners', () => {
   const car = createVehicleState();
   const world = { obstacles: [{ x0: -0.08, x1: 0.08, z0: 12, z1: 12.10 }] };
