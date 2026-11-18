@@ -1,5 +1,5 @@
 import { basis, identity, intersectsFrustum, multiply, orthographic, perspective, unit, view } from './math.js';
-import { depthFragment, depthVertex, meshFragment, meshVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?webgl-android-fix-20261118-050';
+import { depthFragment, depthVertex, meshFragment, meshVertex, particleFragment, particleVertex, presentFragment, skyFragment, skyVertex } from './shaders.js?drive-060';
 
 export const MATERIAL = { solid: 0, paint: 1, glass: 2, glow: 3, contact: 4, chrome: 5 };
 export const GRAPHICS = {
@@ -11,6 +11,7 @@ const daytimeSun = [-0.62, 0.58, -0.52];
 const eveningSun = [-0.81, 0.12, -0.58];
 const world = identity();
 const white = [1, 1, 1];
+const intact = new Float32Array(4);
 const shadowRange = 48;
 const shadowSize = 1536;
 
@@ -97,9 +98,12 @@ export function createRenderer(canvas) {
   const sky = pipeline(gl, shader(skyVertex), shader(skyFragment), ['Forward', 'Right', 'Up', 'Frame', 'Sun', 'Dusk']);
   const lit = pipeline(gl, shader(meshVertex), shader(meshFragment), [
     'VP', 'Model', 'Light', 'Eye', 'Sun', 'Dusk', 'Tint', 'Contact', 'Style', 'Emission', 'Shadows', 'Texel',
-    'Depth', 'Detail', 'HeadLamp', 'HeadAxis',
+    'Depth', 'Detail', 'HeadLamp', 'HeadAxis', 'Damage', 'Street',
   ]);
-  const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model']);
+  const depth = pipeline(gl, depthVertex, depthFragment, ['Light', 'Model', 'Damage']);
+  const particles = pipeline(gl, shader(particleVertex), shader(particleFragment), ['VP', 'Viewport']);
+  const particleBuffer = gl.createBuffer();
+  const streetUniform = new Float32Array(12);
   const present = pipeline(gl, shader(skyVertex), shader(presentFragment), ['Image', 'Pixel']);
   const shadow = highPrecision ? shadowTarget(gl) : null;
   const color = sceneTarget(gl);
@@ -138,15 +142,30 @@ export function createRenderer(canvas) {
     calls++;
   }
 
-  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0 }) {
+  function drawLit({ mesh, model = world, style = MATERIAL.solid, tint = white, emission = 0, damage = intact }) {
     gl.uniformMatrix4fv(lit.Model, false, model);
     gl.uniform3fv(lit.Tint, tint);
     gl.uniform1f(lit.Style, style);
     gl.uniform1f(lit.Emission, emission);
+    gl.uniform4fv(lit.Damage, damage);
     draw(mesh, true);
   }
 
-  function render({ eye, target, fov, scale, quality, chunks, landscape, objects, contacts, focus, dusk = 0, headlights = false, heading = 0 }) {
+  function drawParticles(data, vp, height) {
+    gl.useProgram(particles.program);
+    gl.uniformMatrix4fv(particles.VP, false, vp);
+    gl.uniform1f(particles.Viewport, height);
+    gl.bindBuffer(gl.ARRAY_BUFFER, particleBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+    gl.drawArrays(gl.POINTS, 0, data.length / 6);
+    calls++;
+  }
+
+  function render({ eye, target, fov, scale, quality, chunks, landscape, objects, contacts, focus, dusk = 0, headlights = false, heading = 0, beamStrength = 1, street = [], effects }) {
     calls = 0;
     const width = Math.max(1, canvas.clientWidth), height = Math.max(1, canvas.clientHeight);
     const profile = GRAPHICS[quality];
@@ -183,12 +202,14 @@ export function createRenderer(canvas) {
         gl.useProgram(depth.program);
         gl.uniformMatrix4fv(depth.Light, false, cachedLight);
         gl.uniformMatrix4fv(depth.Model, false, world);
+        gl.uniform4fv(depth.Damage, intact);
         for (const chunk of chunks) {
           if (intersectsFrustum(cachedLight, chunk)) draw(chunk.mesh, false);
         }
         if (qualityPass) for (const object of objects) {
           if (!object.castsShadow || (object.bounds && !intersectsFrustum(cachedLight, object.bounds))) continue;
           gl.uniformMatrix4fv(depth.Model, false, object.model);
+          gl.uniform4fv(depth.Damage, object.damage || intact);
           draw(object.mesh, false);
         }
         gl.colorMask(true, true, true, true);
@@ -223,8 +244,10 @@ export function createRenderer(canvas) {
     gl.uniform3fv(lit.Sun, sun);
     gl.uniform1f(lit.Dusk, dusk);
     gl.uniform1f(lit.Detail, quality === 'performance' ? 0 : 1);
-    gl.uniform1f(lit.HeadLamp, headlights ? 0.22 + dusk * 1.95 : 0);
+    gl.uniform1f(lit.HeadLamp, headlights ? (0.16 + dusk * 3.95) * beamStrength : 0);
     gl.uniform2f(lit.HeadAxis, Math.sin(heading), Math.cos(heading));
+    for (let i = 0; i < 4; i++) streetUniform.set(street[i] || [0, -1, 0], i * 3);
+    gl.uniform3fv(lit.Street, streetUniform);
     gl.uniform3fv(lit.Contact, focus);
     gl.uniform1f(lit.Shadows, useShadow ? 1 : 0);
     gl.uniform1f(lit.Texel, 1 / shadowSize);
@@ -243,6 +266,7 @@ export function createRenderer(canvas) {
     for (const contact of contacts) {
       if (!contact.bounds || intersectsFrustum(vp, contact.bounds)) drawLit(contact);
     }
+    if (effects?.length) drawParticles(effects, vp, rh * 0.95);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
     if (useAntialias) {

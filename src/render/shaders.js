@@ -65,6 +65,26 @@ void main() {
 }
 `;
 
+const deformation = `
+uniform vec4 uDamage;
+vec3 dent(vec3 p, out float distress) {
+  if (dot(uDamage, vec4(1.0)) < 0.0001) { distress = 0.0; return p; }
+  vec4 panel = uDamage * vec4(
+    smoothstep(1.37, 2.41, p.z),
+    smoothstep(1.35, 2.42, -p.z),
+    smoothstep(0.59, 0.90, -p.x),
+    smoothstep(0.59, 0.90, p.x)
+  );
+  float height = 1.0 - smoothstep(0.70, 1.30, p.y);
+  float uneven = 0.71 + 0.29 * sin(9.4 * p.x + 5.0 * p.z + 8.0 * p.y);
+  distress = clamp((panel.x + panel.y + panel.z + panel.w) * height, 0.0, 1.0);
+  p.z += (panel.y - panel.x) * height * 0.30 * uneven;
+  p.x += (panel.z - panel.w) * height * 0.18 * uneven;
+  p.y -= (panel.x + panel.y) * height * 0.091 * sin(p.x * 8.3 + 1.1);
+  return p;
+}
+`;
+
 export const meshVertex = `
 attribute vec3 aPos;
 attribute vec3 aColor;
@@ -81,8 +101,10 @@ varying vec3 vWorld;
 varying vec3 vLocal;
 varying vec4 vShadow;
 varying float vMaterial;
+varying float vDistress;
+${deformation}
 void main() {
-  vec4 world = uModel * vec4(aPos, 1.0);
+  vec4 world = uModel * vec4(dent(aPos, vDistress), 1.0);
   vWorld = world.xyz;
   vEyeDelta = uEye - world.xyz;
   vLocal = aPos;
@@ -105,6 +127,7 @@ uniform float uTexel;
 uniform float uDetail;
 uniform float uHeadLamp;
 uniform vec2 uHeadAxis;
+uniform vec3 uStreet[4];
 uniform sampler2D uDepth;
 varying vec3 vEyeDelta;
 varying vec3 vColor;
@@ -113,6 +136,7 @@ varying vec3 vWorld;
 varying vec3 vLocal;
 varying vec4 vShadow;
 varying float vMaterial;
+varying float vDistress;
 ${noise}
 ${atmosphere}
 
@@ -175,12 +199,31 @@ float headlight(vec3 n) {
   if (uHeadLamp < 0.01 || vWorld.y > 3.2) return 0.0;
   vec2 displacement = vWorld.xz - uContact.xz;
   float ahead = dot(displacement, uHeadAxis) - 2.40;
-  if (ahead < 0.15 || ahead > 43.0) return 0.0;
-  float across = abs(dot(displacement, vec2(uHeadAxis.y, -uHeadAxis.x)));
-  float cone = 1.0 - smoothstep(0.27, 1.0, across / (1.0 + ahead * 0.25));
-  float falloff = smoothstep(0.15, 4.4, ahead) * (1.0 - smoothstep(11.0, 41.0, ahead));
-  float cutOff = 1.0 - smoothstep(0.72 + ahead * 0.016, 1.12 + ahead * 0.016, vWorld.y - uContact.y);
-  return uHeadLamp * cone * falloff * cutOff * (0.35 + 0.65 * max(0.0, n.y));
+  if (ahead < 0.18 || ahead > 48.0) return 0.0;
+  float across = dot(displacement, vec2(uHeadAxis.y, -uHeadAxis.x));
+  float spread = 0.82 + ahead * 0.23;
+  float left = 1.0 - smoothstep(0.23, 1.0, abs(across + 0.57) / spread);
+  float right = 1.0 - smoothstep(0.23, 1.0, abs(across - 0.57) / spread);
+  float height = vWorld.y - uContact.y;
+  float cutoff = (1.0 - smoothstep(0.70, 0.97, height - max(0.0, across) * 0.027));
+  float incidence = max(0.0, dot(n, normalize(vec3(-uHeadAxis.x * ahead, 0.84 - height, -uHeadAxis.y * ahead))));
+  float falloff = 142.0 / (ahead * ahead + across * across + 36.0);
+  return uHeadLamp * 0.5 * (left + right) * falloff * cutoff *
+         (0.13 + incidence) * smoothstep(0.28, 3.8, ahead) * (1.0 - smoothstep(32.0, 48.0, ahead));
+}
+
+float streetLight(vec3 normal) {
+  if (uDusk < 0.04 || vWorld.y > 8.0) return 0.0;
+  float intensity = 0.0;
+  for (int i = 0; i < 4; i++) {
+    if (uStreet[i].y < 0.0) continue;
+    vec3 delta = uStreet[i] - vWorld;
+    float radius = dot(delta.xz, delta.xz);
+    if (radius > 200.0 || delta.y < -0.3) continue;
+    float shine = max(0.0, dot(normal, normalize(delta)));
+    intensity += (1.0 - smoothstep(45.0, 200.0, radius)) * shine * 11.0 / (dot(delta, delta) + 8.0);
+  }
+  return intensity * uDusk * uDusk;
 }
 
 vec3 displayColor(vec3 linear) {
@@ -207,9 +250,16 @@ void main() {
     * mix(vec3(1.0), vec3(0.40, 0.46, 0.61), uDusk);
   vec3 sunLight = mix(vec3(1.07, 0.88, 0.67), vec3(0.74, 0.39, 0.20), uDusk);
   vec3 baseColor = max(vColor * uTint, vec3(0.0));
+  if (vDistress > 0.03) {
+    float scoring = noise2(vLocal.xz * vec2(33.0, 20.0) + vLocal.y * 32.0);
+    float abrasion = smoothstep(0.57, 0.82, scoring) * vDistress;
+    vec3 exposed = mix(vec3(0.19, 0.185, 0.17), vec3(0.55, 0.53, 0.49), smoothstep(0.10, 0.57, vDistress));
+    baseColor = mix(baseColor, exposed, abrasion * 0.72);
+  }
   vec3 base = baseColor * baseColor;
   vec3 lit = base * (ambient + visibility * direct * sunLight) * surfaceGrain(n, d);
   lit += base * headlight(n) * vec3(1.0, 0.85, 0.66);
+  lit += base * streetLight(n) * vec3(1.0, 0.72, 0.39);
 
   bool paint = uStyle > 0.5 && uStyle < 1.5;
   bool glass = (uStyle > 1.5 && uStyle < 2.5) || (vMaterial > 6.5 && vMaterial < 7.5);
@@ -270,8 +320,34 @@ export const depthVertex = `
 attribute vec3 aPos;
 uniform mat4 uLight;
 uniform mat4 uModel;
+${deformation}
 void main() {
-  gl_Position = uLight * uModel * vec4(aPos, 1.0);
+  float distress;
+  gl_Position = uLight * uModel * vec4(dent(aPos, distress), 1.0);
+}
+`;
+
+export const particleVertex = `
+attribute vec3 aPos;
+attribute vec3 aColor;
+uniform mat4 uVP;
+uniform float uViewport;
+varying vec2 vAppearance;
+void main() {
+  gl_Position = uVP * vec4(aPos, 1.0);
+  gl_PointSize = clamp(aColor.x * uViewport / max(1.0, gl_Position.w), 1.0, 48.0);
+  vAppearance = aColor.yz;
+}
+`;
+
+export const particleFragment = `
+precision highp float;
+varying vec2 vAppearance;
+void main() {
+  float radial = length(gl_PointCoord * 2.0 - 1.0);
+  float edge = 1.0 - smoothstep(0.13, 1.0, radial);
+  vec3 rgb = mix(vec3(0.61, 0.56, 0.49), vec3(1.0, 0.66, 0.22), vAppearance.y);
+  gl_FragColor = vec4(rgb, edge * vAppearance.x * mix(0.28, 1.0, vAppearance.y));
 }
 `;
 

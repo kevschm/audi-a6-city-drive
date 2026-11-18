@@ -69,6 +69,23 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--amber); outline
 .actions button:hover { background: #303a38; }
 .actions button[aria-pressed="false"] { color: var(--muted); }
 .actions button[aria-pressed="true"] { box-shadow: inset 0 -2px #edc77dad; }
+.actions .drive-reset {
+  grid-column: 1 / -1;
+  grid-auto-flow: column;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  min-height: 31px;
+  border-color: #ecc47a7a;
+}
+.drive-reset span { font-weight: 700; }
+
+.car-condition { display: flex; gap: 5px; align-items: center; color: var(--muted); }
+.car-condition small { white-space: nowrap; font-size: 8px; }
+#conditionPanels { display: flex; gap: 2px; }
+#conditionPanels i { display: block; width: 4px; height: 6px; border-radius: 1px; background: #9ba98d; }
+#conditionPanels i[data-level="scuffed"] { background: #edbe69; }
+#conditionPanels i[data-level="damaged"] { background: #e47760; }
 
 .route {
   position: absolute; top: calc(var(--top) + 35px); left: 50%; transform: translateX(-50%);
@@ -199,6 +216,8 @@ kbd { color: #f5f2e9; font: inherit; font-weight: 700; }
   .readout { min-width: 76px; gap: 3px; }
   .shift span { font-size: 13px; }
   .shift small, .telemetry small, .speed small { font-size: 8px; }
+  .car-condition small { font-size: 7.5px; }
+  .car-condition { gap: 3px; }
   .indicators { grid-template-columns: 1fr 1fr; gap: 4px; align-self: stretch; }
   .indicators button { width: 39px; height: auto; }
   .toast { bottom: calc(var(--bottom) + 58px); }

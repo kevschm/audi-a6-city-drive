@@ -1,7 +1,7 @@
 import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
-import { MATERIAL } from './renderer.js?webgl-android-fix-20261118-050';
+import { MATERIAL } from './renderer.js?drive-060';
 import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
 
 const volume = (x, y, z, radius, height) =>
@@ -48,6 +48,8 @@ export function buildVehicles(renderer) {
     return mesh;
   });
   const gateMesh = new Mesh();
+  const streetLamp = new Mesh();
+  streetLamp.box(-0.248, -0.009, -0.102, 0.248, 0.009, 0.102, '#ffcd84');
   for (const side of [-1, 1]) {
     const x = side * GATE_HALF_WIDTH;
     gateMesh.box(x - 0.038, 0.034, -0.08, x + 0.038, 1.14, 0.08, '#ffc263');
@@ -58,9 +60,9 @@ export function buildVehicles(renderer) {
     const x = i * 0.59;
     gateMesh.quad([x - 0.23, 0.024, -0.10], [x - 0.23, 0.024, 0.10], [x + 0.23, 0.024, 0.10], [x + 0.23, 0.024, -0.10], '#ffe5aa');
   }
-  for (const mesh of [...Object.values(avant), ...Object.values(cityCar), contact, gateMesh, ...lenses]) renderer.upload(mesh);
+  for (const mesh of [...Object.values(avant), ...Object.values(cityCar), contact, gateMesh, streetLamp, ...lenses]) renderer.upload(mesh);
 
-  function scene(car, traffic, signals, signalColor, { showBody, far, headlights, blink, dusk, gate }) {
+  function scene(car, traffic, signals, signalColor, { showBody, far, headlights, blink, dusk, gate, street }) {
     const objects = [], contacts = [];
     for (const actor of traffic) {
       const distance = Math.hypot(actor.x - car.x, actor.z - car.z);
@@ -87,20 +89,27 @@ export function buildVehicles(renderer) {
     if (gate && Math.hypot(gate.x - car.x, gate.z - car.z) < 125) {
       objects.push({ mesh: gateMesh, model: transform(gate.x, gate.z, gate.heading), emission: 0.45 + dusk * 0.55 });
     }
+    for (const [x, y, z] of street) objects.push({
+      mesh: streetLamp, model: translate(x, y, z), emission: dusk * 1.6,
+      bounds: volume(x, y - 0.02, z, 0.28, 0.04),
+    });
     if (showBody) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll, car.pitch);
       contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading, Math.max(0, Math.min(car.heave, 0.16))), style: MATERIAL.contact });
+      const damage = car.damage;
+      const front = 1 - damage[0] * 0.91, rear = 1 - damage[1] * 0.94;
+      const shell = { model: body, damage };
       objects.push(
-        { mesh: avant.body, model: body, castsShadow: true },
-        { mesh: avant.paint, model: body, style: MATERIAL.paint, castsShadow: true },
-        { mesh: avant.glass, model: body, style: MATERIAL.glass },
-        { mesh: avant.brightwork, model: body, style: MATERIAL.chrome },
-        { mesh: avant.tailLights, model: body, emission: headlights ? 0.74 : 0.12 },
-        { mesh: avant.brakeLights, model: body, emission: car.brakeLights ? 2.85 : 0.06 },
-        { mesh: avant.reverseLights, model: body, emission: car.reverseLights ? 1.15 : 0 },
-        { mesh: avant.headLights, model: body, emission: headlights ? 0.85 : 0 },
-        { mesh: avant.leftSignals, model: body, emission: blink === -1 ? 2.2 : 0 },
-        { mesh: avant.rightSignals, model: body, emission: blink === 1 ? 2.2 : 0 },
+        { ...shell, mesh: avant.body, castsShadow: true },
+        { ...shell, mesh: avant.paint, style: MATERIAL.paint, castsShadow: true },
+        { ...shell, mesh: avant.glass, style: MATERIAL.glass },
+        { ...shell, mesh: avant.brightwork, style: MATERIAL.chrome },
+        { ...shell, mesh: avant.tailLights, emission: headlights ? 0.74 * rear : 0.12 },
+        { ...shell, mesh: avant.brakeLights, emission: car.brakeLights ? 2.85 * rear : 0.06 },
+        { ...shell, mesh: avant.reverseLights, emission: car.reverseLights ? 1.15 * rear : 0 },
+        { ...shell, mesh: avant.headLights, emission: headlights ? 0.85 * front : 0 },
+        { ...shell, mesh: avant.leftSignals, emission: blink === -1 ? 2.2 * (1 - damage[2] * 0.9) : 0 },
+        { ...shell, mesh: avant.rightSignals, emission: blink === 1 ? 2.2 * (1 - damage[3] * 0.9) : 0 },
       );
       const chassis = transform(car.x, car.z, car.heading);
       let index = 0;

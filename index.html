@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#151b1b">
-  <meta name="game-version" content="0.5.0">
+  <meta name="game-version" content="0.6.0">
   <title>Audi A6 City Drive</title>
   <meta name="game-build" content="WEBGL-ANDROID-20261118B">
   <link rel="stylesheet" href="./src/styles.css">
@@ -28,6 +28,7 @@
         <button id="pauseBtn" type="button" title="Spiel pausieren (P)"><b aria-hidden="true">Ⅱ</b><span>Pause</span></button>
         <button id="lightBtn" type="button" title="Scheinwerfer (L)" aria-pressed="false"><b aria-hidden="true">✦</b><span>Licht aus</span></button>
         <button id="trialBtn" type="button" title="Bahnhofsrunde (T)" aria-pressed="false"><b aria-hidden="true">◴</b><span>Zeitfahrt</span></button>
+        <button id="driveReset" class="drive-reset" type="button" title="Fahrzeug und Schäden zurücksetzen (R)"><b aria-hidden="true">↺</b><span>Reset</span></button>
       </div>
     </aside>
 
@@ -41,6 +42,10 @@
       <div class="readout">
         <div class="shift"><span id="gear">N</span><small id="rpm">850</small></div>
         <div class="rev"><i id="rpmb"></i></div>
+        <div class="car-condition">
+          <div id="conditionPanels" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <small id="condition">Intakt</small>
+        </div>
         <div class="telemetry"><small id="dist">0,0 km</small><small id="fps" aria-label="Bildrate">– FPS</small></div>
       </div>
       <div class="indicators" aria-label="Blinker">
@@ -70,7 +75,7 @@
         <h2 id="introTitle">Audi A6<br>C4 Avant</h2>
         <button class="primary" type="button" id="startBtn" disabled>Spiel lädt …</button>
         <p class="intro-desktop">Fahren mit WASD oder den Pfeiltasten.</p>
-        <p class="intro-touch">Drehe dein Gerät für mehr Sicht auf die Straße.</p>
+        <p class="intro-touch">Spiele quer. Ziehe in der Szene zum Drehen der Kamera und zoome mit zwei Fingern.</p>
       </section>
     </div>
     <div class="modal hidden" id="pauseModal">
@@ -104,6 +109,6 @@
       document.getElementById('errorModal').classList.remove('hidden');
     }, true);
   </script>
-  <script type="module" src="./src/main.js?webgl-android-fix-20261118-050"></script>
+  <script type="module" src="./src/main.js?drive-060"></script>
 </body>
 </html>

@@ -344,6 +344,7 @@ function streetLamp(mesh, obstacles, x, z, height, direction = 1) {
   mesh.box(armX - .32, height + .06, z - .14, armX + .32, height + .23, z + .14, '#5e6461');
   mesh.box(armX - .25, height + .035, z - .104, armX + .25, height + .09, z + .104, '#e5dbc1');
   footprint(obstacles, x - .2, z - .2, x + .2, z + .2, 'street-furniture');
+  return [armX, height + .029, z];
 }
 
 function trafficSignal(mesh, obstacles, signals, intersectionX, intersectionZ, axis, direction) {
@@ -750,6 +751,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
   const obstacles = [];
   const districts = [];
   const signals = [];
+  const streetLights = [];
 
   function meshAt(x, z, reach) {
     const key = `${Math.floor((x + EDGE) / 100)},${Math.floor((z + EDGE) / 100)}`;
@@ -794,7 +796,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
       if (lights || (i > 0 && j > 0 && i < 6 && j < 6 && (i + j) % 2 === 0)) {
         crosswalk(mesh, center, z, widths[i], widths[j], lights);
       }
-      if (i < 6 && j < 6) streetLamp(mesh, obstacles, center + widths[i] + 1.65, z + widths[j] + 7.3, 5.75, -1);
+      if (i < 6 && j < 6) streetLights.push(streetLamp(mesh, obstacles, center + widths[i] + 1.65, z + widths[j] + 7.3, 5.75, -1));
       if (!lights) continue;
       for (const axis of [0, 1]) for (const direction of [-1, 1]) {
         trafficSignal(mesh, obstacles, signals, center, z, axis, direction);
@@ -817,5 +819,5 @@ export function buildCity({ Mesh, seed = 364844 }) {
     else neighborhood(mesh, obstacles, random, ix, iz, x, z, kind);
   }
 
-  return { landscape, cityChunks: [...chunks.values()], obstacles, districts, signals };
+  return { landscape, cityChunks: [...chunks.values()], obstacles, districts, signals, streetLights };
 }
