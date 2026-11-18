@@ -22,13 +22,14 @@ function blockKind(ix, iz) {
   if (ix === 2 && iz === 3) return 'market';
   if (ix === 3 && iz === 3) return 'station';
   if (ix === 5 && iz === 1) return 'service';
+  if (ix === 5 && iz === 2) return 'foundry';
   if (ix === 0 || ix === 5 || iz === 0 || iz === 5) return 'residential';
   return ix === 2 || ix === 3 ? 'historic' : 'mixed';
 }
 
 const districtNames = {
   park: 'Am Stadtpark', market: 'Marktplatz', station: 'Bahnhofstraße',
-  service: 'Am Betriebshof', residential: 'Wohngebiet', historic: 'Altstadt', mixed: 'Innenstadt',
+  service: 'Am Betriebshof', foundry: 'Alte Gießerei', residential: 'Wohngebiet', historic: 'Altstadt', mixed: 'Innenstadt',
 };
 
 function blockAt(x, z) {
@@ -147,6 +148,7 @@ const signLetters = {
   C: ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
   E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
   F: ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+  G: ['01110', '10001', '10000', '10111', '10001', '10001', '01110'],
   H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
   I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
   K: ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
@@ -275,6 +277,36 @@ function building(mesh, obstacles, random, x, z, width, depth, floors, style, pa
     { face: facadeFace(mesh, x0, z, -1, 0), span: depth, front: front === -2 },
   ];
   for (const { face, span, front: main } of faces) {
+    if (modern && floors >= 4) {
+      // Ribbon windows turn the corners. Deep horizontal sunshades and a
+      // recessed rooftop plant floor give the office blocks a distinct section.
+      for (let level = 0; level < floors; level++) {
+        const low = .78 + level * 3.04, high = low + 2.05;
+        face.panel(-span / 2, low, span / 2, high, .04, '#536c77', 'glass');
+        for (let x = -span / 2 + .38; x < span / 2; x += 2.02)
+          face.ledge(x, low - .1, x + .085, high + .1, .15, '#929c99');
+        face.ledge(-span / 2, high + .05, span / 2, high + .24, .41, '#c4beb1');
+      }
+      if (main) {
+        face.panel(-2.08, .18, 2.08, 3.01, .18, '#344d58', 'glass');
+        face.ledge(-3.12, 3.05, 3.12, 3.33, 1.62, '#696c66');
+      }
+      continue;
+    }
+    if (main && style === 'historic') {
+      // Stepped masonry gable around an attic oculus and projecting cornices.
+      for (let i = 0; i < 4; i++) {
+        const half = 3.05 - i * .69, low = height - .15 + i * .72;
+        face.ledge(-half, low, half, low + .72, .30, palette.wall);
+        face.ledge(-half - .09, low + .63, half + .09, low + .77, .39, palette.trim);
+      }
+      const ring = (r, a, inset) => face.point(r * Math.cos(a), height + .97 + r * Math.sin(a), inset);
+      for (let i = 0; i < 14; i++) {
+        const a = i * Math.PI / 7, b = (i + 1) * Math.PI / 7;
+        mesh.quad(ring(.53, a, .35), ring(.53, b, .35), ring(.39, b, .39), ring(.39, a, .39), palette.trim);
+        mesh.tri(face.point(0, height + .97, .36), ring(.39, a, .36), ring(.39, b, .36), '#435360', 'glass');
+      }
+    }
     const bays = Math.max(2, Math.round(span / (modern ? 3.4 : style === 'gable' ? 3.7 : 3.15)));
     const bayWidth = span / bays;
     if (main && retail) storefront(mesh, face, span, palette, ['#746349', '#704e47', '#455e56']);
@@ -309,16 +341,21 @@ function tree(mesh, obstacles, x, z, size, y = CURB) {
   const shades = treeTints[Math.floor(sample() * treeTints.length)];
   mesh.cylY(x, y, z, .22 * size, 2.95 * size, '#665648', 8);
   mesh.cylY(x, y + .01, z, .67 * size, .045, '#746b50', 10);
-  mesh.sphere(x, y + 3.89 * size, z, 1.48 * size, 1.53 * size, 1.45 * size, shades[0], 9, 5, 'foliage');
+  mesh.sphere(x, y + 3.72 * size, z, 1.32 * size, 1.34 * size, 1.25 * size, shades[0], 9, 5, 'foliage');
   const phase = sample() * Math.PI * 2;
-  const lobes = Math.abs(x) < 80 && Math.abs(z) < 80 ? 5 : 3;
+  const lobes = Math.abs(x) < 80 && Math.abs(z) < 80 ? 8 : 5;
   for (let lobe = 0; lobe < lobes; lobe++) {
     const angle = phase + lobe * (2 * Math.PI / lobes);
-    const radius = (.76 + sample() * .32) * size;
-    const crown = (.79 + sample() * .37) * size;
-    const height = (3.67 + sample() * 1.18) * size;
-    mesh.sphere(x + Math.cos(angle) * radius, y + height, z + Math.sin(angle) * radius,
-      crown, crown * (1.02 + sample() * .24), crown * .91, shades[1 + lobe % 3], 7, 4, 'foliage');
+    const radius = (.76 + sample() * .63) * size;
+    const crown = (.66 + sample() * .39) * size;
+    const height = (3.54 + sample() * 1.76) * size;
+    const dx = Math.cos(angle), dz = Math.sin(angle), cx = x + dx * radius, cz = z + dz * radius;
+    const fork = [x + dx * .12, y + 2.13 * size, z + dz * .12], tip = [cx, y + height, cz];
+    mesh.tri([fork[0] + dz * .11, fork[1], fork[2] - dx * .11], tip,
+      [fork[0] - dz * .11, fork[1], fork[2] + dx * .11], '#6d6451');
+    mesh.sphere(cx, y + height, cz, crown * 1.18, crown * .92, crown, shades[1 + lobe % 3], 8, 5, 'foliage');
+    mesh.sphere(cx + dx * crown * .66, y + height + crown * .18, cz + dz * crown * .66,
+      crown * .64, crown * .59, crown * .67, shades[1 + (lobe + 1) % 3], 6, 4, 'foliage');
   }
   mesh.sphere(x + .21 * size, y + 4.96 * size, z - .27 * size, .95 * size, 1.02 * size, .85 * size, shades[3], 8, 4, 'foliage');
   footprint(obstacles, x - .21 * size, z - .21 * size, x + .21 * size, z + .21 * size, 'tree');
@@ -688,6 +725,44 @@ function sidewalkBlock(mesh, obstacles, ix, iz, x, z, kind) {
   }
 }
 
+function foundry(mesh, obstacles, objects, x, z) {
+  const left = x - 21, right = x + 16, back = z + 18, front = z - 4, eaves = 5.6;
+  mesh.box(left, CURB, front, right, eaves, back, '#9a6450', 'brick');
+  footprint(obstacles, left, front, right, back, 'building');
+  const facade = facadeFace(mesh, (left + right) / 2, front, 0, -1);
+  for (let bay = 0; bay < 4; bay++) {
+    const a = left + bay * 9.25, b = a + 9.25;
+    const west = (xx, yy) => [xx, yy, front], east = (xx, yy) => [xx, yy, back];
+    mesh.quad(west(a, eaves), east(a, eaves), east(b - 1.1, 8.05), west(b - 1.1, 8.05), '#565c57', 'metal');
+    mesh.quad(west(b - 1.1, 8.05), east(b - 1.1, 8.05), east(b, eaves), west(b, eaves), '#79919a', 'glass');
+    for (const end of [west, east]) mesh.tri(end(a, eaves), end(b - 1.1, 8.05), end(b, eaves), '#a4725d', 'brick');
+    const u = (bay - 1.5) * 9.25;
+    facade.ledge(u - 3.45, .2, u + 3.45, 4.35, .12, '#484e4a');
+    for (let i = 1; i < 10; i++) facade.panel(u - 3.22, i * .39, u + 3.22, i * .39 + .065, .14, '#757e76');
+    facade.ledge(u - 3.7, 4.35, u + 3.7, 4.55, .80, '#505b5b');
+    facade.panel(u - 1.72, 2.79, u + 1.72, 3.42, .16, '#384448');
+    for (let pane = 0; pane < 4; pane++) {
+      const px = u - 1.65 + pane * .83;
+      facade.panel(px, 2.86, px + .72, 3.35, .172, '#66818b', 'glass');
+    }
+    facade.ledge(u + 3.55, .18, u + 3.96, 4.83, .20, '#755747');
+    for (let stripe = 0; stripe < 4; stripe++) facade.panel(u + 3.55, .25 + stripe * .36,
+      u + 3.96, .40 + stripe * .36, .21, '#cbb671');
+  }
+  facade.ledge(-5.7, 4.60, 5.7, 5.42, .19, '#414f50');
+  lettering(facade, 'GIESSEREI', 0, 4.72, .081, .205, '#dbceb4');
+  for (const dx of [18.9, 22.2]) {
+    mesh.cylY(x + dx, CURB, z + 11, 1.13, 13.2, '#946d58', 12, 'brick');
+    mesh.cylY(x + dx, 13.28, z + 11, 1.22, .40, '#544a42', 12);
+    footprint(obstacles, x + dx - 1.12, z + 9.88, x + dx + 1.12, z + 12.12, 'building');
+  }
+  for (const dx of [-16,-7,2,11]) {
+    ground(mesh, x + dx - .07, z - 19, x + dx + .07, front - .85, CURB + .018, '#b3a07b');
+    objects.push({kind: 'crate', x: x + dx + 2.2, z: front - 2.4});
+  }
+  for (const dz of [-12.4,-9.8]) objects.push({kind:'drum', x:x + 19.5, z:z + dz});
+}
+
 function neighborhood(mesh, obstacles, random, ix, iz, x, z, kind) {
   const palette = salt => PALETTES[(ix * 5 + iz * 3 + salt) % PALETTES.length];
   if (kind === 'residential') {
@@ -894,6 +969,7 @@ export function buildCity({ Mesh, seed = 364844 }) {
     else if (kind === 'market') market(mesh, obstacles, x, z, random);
     else if (kind === 'station') station(mesh, obstacles, x, z, random);
     else if (kind === 'service') service(mesh, obstacles, interactives, x, z, random);
+    else if (kind === 'foundry') foundry(mesh, obstacles, interactives, x, z);
     else neighborhood(mesh, obstacles, random, ix, iz, x, z, kind);
   }
 

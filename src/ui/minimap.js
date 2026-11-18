@@ -1,4 +1,4 @@
-const fills = { park: '#415d4b', market: '#af9b7e', station: '#a2917e', historic: '#706c63' };
+const fills = { park: '#415d4b', market: '#af9b7e', station: '#a2917e', historic: '#706c63', foundry: '#8b7161' };
 
 export function createMinimap(canvas, { districts, obstacles }, roads, roadHalfWidth, halfWorld) {
   const context = canvas.getContext('2d');

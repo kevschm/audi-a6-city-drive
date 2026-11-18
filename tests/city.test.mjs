@@ -8,7 +8,8 @@ const city = buildCity({ Mesh });
 test('city scenery fits its culling bounds and includes the mapped districts', () => {
   assert.equal(city.districts.length, 36);
   assert.deepEqual(new Set(city.districts.map(district => district.kind)),
-    new Set(['residential', 'park', 'historic', 'mixed', 'market', 'service', 'station']));
+    new Set(['residential', 'park', 'historic', 'mixed', 'market', 'service', 'station', 'foundry']));
+  assert.equal(districtAt(175, -35), 'Alte Gießerei');
   assert.equal(districtAt(-35, 35), 'Marktplatz');
   assert.equal(districtAt(35, 35), 'Bahnhofstraße');
   assert.equal(districtAt(35, -35), 'Am Stadtpark');

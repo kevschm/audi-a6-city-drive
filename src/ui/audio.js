@@ -141,8 +141,8 @@ export function createDriveAudio() {
     previousGear = car.gear;
   }
 
-  function noiseBurst(type, frequency, loudness, duration, q, pan = 0) {
-    const now = ctx.currentTime;
+  function noiseBurst(type, frequency, loudness, duration, q, pan = 0, delay = 0) {
+    const now = ctx.currentTime + delay;
     const burst = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
     burst.buffer = noise;
     filter.type = type;
@@ -158,7 +158,7 @@ export function createDriveAudio() {
     burst.start(now, Math.random() * 0.8, duration + 0.025);
   }
 
-  function impact({ closingSpeed, scrapeSpeed, localX, wheelChange, glassBreak, detached, material, deltaV }) {
+  function impact({ closingSpeed, scrapeSpeed, localX, wheelChange, glassBreak, detached, material, deltaV, railDepths, roof }) {
     if (!ctx || ctx.state !== 'running' || !enabled) return;
     const strength = Math.min(1, closingSpeed / 22);
     const weight = Math.min(1, Math.max(0.14, deltaV / 9));
@@ -169,6 +169,11 @@ export function createDriveAudio() {
     noiseBurst('bandpass', bodyResonance + strength * 500, (0.08 + strength * 0.42) * Math.sqrt(weight), 0.10 + strength * 0.15, 1.65, pan);
     if (glassBreak) noiseBurst('highpass', 3600, 0.40, 0.34, 0.9, pan);
     if (detached >= 0) noiseBurst('bandpass', 710, 0.22, 0.44, 2.3, pan);
+    if (railDepths && strength > .33) railDepths.forEach((depth, i) => {
+      if (depth > .12) noiseBurst('bandpass', 390 + (1 - depth) * 740, depth * weight * .35,
+        .06 + depth * .13, 2.2, i ? .52 : -.52, .024 + depth * .074);
+    });
+    if (roof) noiseBurst('lowpass', 320, strength * .42, .19, 1.7, pan, .026);
     if (scrapeSpeed > 2 || strength > 0.24) {
       noiseBurst('bandpass', 1960 + strength * 810, 0.07 + Math.min(0.34, scrapeSpeed * 0.016 + strength * 0.21),
         0.15 + Math.min(0.26, scrapeSpeed * 0.012), 3.5, pan);

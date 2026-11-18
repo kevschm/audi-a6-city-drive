@@ -1,4 +1,4 @@
-import { WHEEL_CONTACTS } from './vehicle-suspension.js';
+import { TIRE_RADIUS, WHEEL_CONTACTS } from './vehicle-suspension.js';
 
 export const damageAreas = ['Front', 'Heck', 'links', 'rechts'];
 export const wheelNames = ['Vorderrad links', 'Vorderrad rechts', 'Hinterrad links', 'Hinterrad rechts'];
@@ -11,12 +11,19 @@ export const detachableParts = [
   { kind: 'leftMirror', x: -0.93, y: 1.11, z: 0.80, mass: 1.5, radius: 0.16, floor: 0.08, material: 'plastic' },
   { kind: 'rightMirror', x: 0.93, y: 1.11, z: 0.80, mass: 1.5, radius: 0.16, floor: 0.08, material: 'plastic' },
 ];
+export const wheelParts = WHEEL_CONTACTS.map(([x, z], wheel) => ({
+  kind: 'wheel', wheel, mass: 19, radius: TIRE_RADIUS, floor: TIRE_RADIUS,
+  material: 'steel', x, y: TIRE_RADIUS, z,
+}));
 
 export function createDamageState() {
   return {
     damage: [0, 0, 0, 0], dents: new Float32Array(4 * dentLimit),
     wheelDamage: [0, 0, 0, 0], axleDamage: [0, 0], glass: [0, 0, 0, 0],
-    detached: 0, mechanical: { engine: 0, cooling: 0, brakes: 0, temperature: 90, stalled: false },
+    railCrush: new Float32Array(4),
+    roofCrush: new Float32Array(2),
+    sideGlass: new Float32Array(6),
+    detached: 0, lostWheels: 0, mechanical: { engine: 0, cooling: 0, brakes: 0, temperature: 90, stalled: false },
   };
 }
 
@@ -34,6 +41,23 @@ export function impactArea(nx, nz, heading) {
   const right = nx * cos - nz * sin;
   if (Math.abs(forward) >= Math.abs(right)) return forward < 0 ? 0 : 1;
   return right > 0 ? 2 : 3;
+}
+
+// Plastic work in two longitudinal members at each end. F(d) = yield + k*d.
+// The crossmember shares the engaged contact width over the left/right half.
+// Values describe the game model and are not measured Audi crash data.
+function compressRails(car, area, x, width, energy) {
+  const offset = area * 2, front = area === 0;
+  const left = clamp(.5 - x / Math.max(.44, width + .24), .025, .975);
+  const yieldForce = front ? 60_000 : 68_000;
+  const stiffness = front ? 510_000 : 630_000;
+  const capacity = front ? .72 : .54;
+  const work = Math.max(0, energy - 3200) * .80;
+  for (let i = 0; i < 2; i++) {
+    const d = car.railCrush[offset + i], force = yieldForce + stiffness * d;
+    const share = work * (i === 0 ? left : 1 - left);
+    car.railCrush[offset + i] = Math.min(capacity, d + 2 * share / (Math.sqrt(force * force + 2 * stiffness * share) + force));
+  }
 }
 
 function addDent(dents, x, z, amount, area) {
@@ -60,6 +84,7 @@ export function applyImpact(car, closingSpeed, scrapeSpeed, nx, nz, x, z, localX
   const anchorX = localX ?? (area === 2 ? -0.89 : area === 3 ? 0.89 : 0);
   const anchorZ = localZ ?? (area === 0 ? 2.40 : area === 1 ? -2.40 : 0);
   addDent(car.dents, anchorX, anchorZ, change, area);
+  if (area < 2) compressRails(car, area, anchorX, contact?.contactWidth ?? .55, crushEnergy);
 
   const mechanical = car.mechanical;
   if (area === 0) {
@@ -95,15 +120,34 @@ export function applyImpact(car, closingSpeed, scrapeSpeed, nx, nz, x, z, localX
   const glassThreshold = area < 2 ? 47_000 : 23_000;
   const glassChange = Math.max(0, crushEnergy - glassThreshold) / (area < 2 ? 240_000 : 95_000);
   car.glass[area] = Math.min(1, glassBefore + glassChange);
-  const glassBreak = glassBefore < 0.72 && car.glass[area] >= 0.72;
+  let glassBreak = glassBefore < 0.72 && car.glass[area] >= 0.72;
+  if (area >= 2) {
+    glassBreak = false;
+    const spans = [[-2.22,-1.26],[-1.26,-.16],[-.16,1.11]];
+    for (let i = 0; i < 3; i++) {
+      const interval = spans[i], slot = (area - 2) * 3 + i;
+      const gap = Math.max(0, interval[0] - anchorZ, anchorZ - interval[1]);
+      const prior = car.sideGlass[slot], exposure = Math.max(0, 1 - gap / .86);
+      car.sideGlass[slot] = Math.min(1, prior + glassChange * exposure * exposure);
+      if (prior < .72 && car.sideGlass[slot] >= .72) glassBreak = true;
+    }
+  }
   const partThreshold = area < 2 ? 132_000 : 51_000;
   const part = 1 << area;
   const detached = nearMirror && crushEnergy > partThreshold && !(car.detached & part) ? area : -1;
   if (detached >= 0) car.detached |= part;
+  let lostWheel = -1;
+  if (car.wheelSpin && wheel >= 0 && area >= 2 && crushEnergy > 110_000 &&
+      car.wheelDamage[wheel] > .57 && !(car.lostWheels & (1 << wheel))) {
+    lostWheel = wheel;
+    car.lostWheels |= 1 << wheel;
+    car.wheelDamage[wheel] = 1;
+  }
   if (mechanical.engine >= 0.92) mechanical.stalled = true;
   if (closingSpeed > 1.6 || (closingSpeed > 0.6 && scrapeSpeed > 6)) {
     car.impact = { ...contact, area, x, z, localX: anchorX, localZ: anchorZ, nx, nz, closingSpeed, scrapeSpeed, change,
-      wheel, wheelChange, detached, glassBreak };
+      railDepths: area < 2 ? Array.from(car.railCrush.subarray(area * 2, area * 2 + 2)) : null,
+      wheel, wheelChange, detached, lostWheel, glassBreak };
   }
 }
 

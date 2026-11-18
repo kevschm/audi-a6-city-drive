@@ -1,7 +1,7 @@
 import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
-import { MATERIAL } from './renderer.js?drive-090';
+import { MATERIAL } from './renderer.js?drive-0100';
 import { createCockpit, dialAngle, dialPose } from './cockpit.js';
 import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
 import { detachableParts } from '../simulation/vehicle-damage.js';
@@ -120,7 +120,7 @@ export function buildVehicles(renderer) {
       const model = transform(actor.x, actor.z, actor.heading);
       const cityCar = trafficModels[actor.model ?? 0];
       const bounds = volume(actor.x, 0, actor.z, 2.88, 1.6);
-      const shell = { model, bounds, damage: actor.damage, dents: actor.dents };
+      const shell = { model, bounds, damage: actor.damage, dents: actor.dents, rails: actor.railCrush, roof: actor.roofCrush };
       objects.push(
         { ...shell, mesh: cityCar.paint, style: MATERIAL.paint, tint: color(actor.color), castsShadow: true },
         { ...shell, mesh: cityCar.trim },
@@ -147,14 +147,14 @@ export function buildVehicles(renderer) {
     });
     if (!cockpit) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll, car.pitch);
-      contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading, Math.max(0, Math.min(car.heave, 0.16))), style: MATERIAL.contact });
+      contacts.push({ mesh: contact, model: transform(car.x, car.z, car.heading,
+        car.lateralTest ? (car.x > 0 ? .24 : 0) : Math.max(0, Math.min(car.heave, 0.16))), style: MATERIAL.contact });
       const damage = car.damage;
       const front = 1 - damage[0] * 0.23, rear = 1 - damage[1] * 0.23;
-      const shell = { model: body, damage, dents: car.dents };
+      const shell = { model: body, damage, dents: car.dents, rails: car.railCrush, roof: car.roofCrush };
       objects.push(
         { ...shell, mesh: avant.body, castsShadow: true },
         { ...shell, mesh: avant.paint, style: MATERIAL.paint, castsShadow: true },
-        { ...shell, mesh: avant.glass, style: MATERIAL.glass, panes: car.glass },
         { ...shell, mesh: avant.brightwork, style: MATERIAL.chrome },
         { ...shell, mesh: avant.tailLights, style: MATERIAL.lens, emission: headlights ? 0.74 * rear : 0.12 },
         { ...shell, mesh: avant.brakeLights, style: MATERIAL.lens, emission: car.brakeLights ? 2.85 * rear : 0.06 },
@@ -163,13 +163,15 @@ export function buildVehicles(renderer) {
         { ...shell, mesh: avant.leftSignals, style: MATERIAL.lens, emission: blink === -1 ? 2.2 * (1 - damage[2] * 0.9) : 0 },
         { ...shell, mesh: avant.rightSignals, style: MATERIAL.lens, emission: blink === 1 ? 2.2 * (1 - damage[3] * 0.9) : 0 },
       );
+      contacts.push({ ...shell, mesh: avant.glass, style: MATERIAL.glass, panes: car.glass, cabinGlass: true, sideGlass: car.sideGlass });
       for (let i = 0; i < components.length; i++) {
         if (!(car.detached & 1 << i)) addComponent(objects, i, shell, headlights ? 0.32 * front : 0);
       }
-      const chassis = transform(car.x, car.z, car.heading);
+      const chassis = car.lateralTest ? body : transform(car.x, car.z, car.heading);
       let index = 0;
       for (const z of [AVANT_WHEELS.front, AVANT_WHEELS.rear]) {
         for (const side of [-1, 1]) {
+          if (car.lostWheels & (1 << index)) { index++; continue; }
           const rim = car.wheelDamage[index];
           const axle = car.axleDamage[index < 2 ? 0 : 1];
           const mount = translate(side * AVANT_WHEELS.halfTrack, AVANT_WHEELS.radius + car.wheelTravel[index] - rim * 0.055, z);
@@ -185,7 +187,7 @@ export function buildVehicles(renderer) {
       const body = transform(car.x, car.z, car.heading, car.heave, car.roll * 0.64, car.pitch);
       objects.push(
         { mesh: cabin.shell, model: body, cockpit: true },
-        { mesh: cabin.hood, model: body, cockpit: true, style: MATERIAL.paint, damage: car.damage, dents: car.dents },
+        { mesh: cabin.hood, model: body, cockpit: true, style: MATERIAL.paint, damage: car.damage, dents: car.dents, rails: car.railCrush, roof: car.roofCrush },
         { mesh: cabin.instruments, model: body, cockpit: true, emission: headlights ? 0.64 : 0.34 + dusk * 0.16 },
         { mesh: cabin.wheel, model: dialPose(body, -0.396, 0.909, 0.382, -car.steer * 2.90), cockpit: true },
         { mesh: cabin.needle, model: dialPose(body, -0.486, 1.026, 0.619, dialAngle(Math.abs(car.speed) * 3.6, 240)), cockpit: true, emission: 0.55 },
@@ -203,6 +205,11 @@ export function buildVehicles(renderer) {
     }
     for (const part of debris) {
       if (!part.debris || Math.hypot(part.x - car.x, part.z - car.z) > far) continue;
+      if (part.kind === 'wheel') {
+        objects.push({mesh: avant.wheel, model: transform(part.x, part.z, part.heading, part.y, 0, part.pitch),
+          rim: .24, castsShadow: true});
+        continue;
+      }
       const index = detachableParts.findIndex(spec => spec.kind === part.kind);
       const spec = detachableParts[index];
       const pivot = transform(part.x, part.z, part.heading, part.y, 0, part.pitch);

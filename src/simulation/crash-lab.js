@@ -12,6 +12,9 @@ export const testScenarios = {
   rear: { label: 'Heckaufprall', from: 37, reverse: true, walls: [wall] },
   side: { label: 'Seitlicher Fahrzeugtreffer', from: -22, targets: [{ x: 0.8, z: 8, heading: Math.PI / 2, color: '#3f8178' }] },
   dummy: { label: 'Crashtest-Dummy', from: -22, dummy: true },
+  rollover: { label: 'Bordstein-Kippversuch', from: 0, lateral: true },
+  wheel: { label: 'Radaufhängung am Pfosten', from: 0, crosswise: true,
+    walls: [{x0: 2.2, x1: 2.5, z0: 1.24, z1: 1.54, material: 'steel'}] },
   chain: {
     label: 'Kettenkollision', from: -22,
     targets: [
@@ -35,7 +38,8 @@ export function createCrashScenario(name, kmh) {
   const spec = testScenarios[name] || testScenarios.front;
   const speed = Math.max(10, Math.min(130, Number(kmh) || 70)) / 3.6 * (spec.reverse ? -1 : 1);
   return {
-    label: spec.label, spawn: { x: 0, z: spec.from, speed, vz: speed, reverseLights: Boolean(spec.reverse), gear: spec.reverse ? 'R' : 'N' },
+    label: spec.label, spawn: { x: spec.lateral ? -4.8 : 0, z: spec.from, speed, vx: spec.lateral || spec.crosswise ? speed : 0,
+      vz: spec.lateral || spec.crosswise ? 0 : speed, lateralTest: Boolean(spec.lateral), reverseLights: Boolean(spec.reverse), gear: spec.reverse ? 'R' : 'N' },
     obstacles: [...perimeter, ...(spec.walls ?? [])],
     traffic: (spec.targets ?? []).map(target => ({ ...target, speed: 0, braking: false })),
     dummies: spec.dummy ? [{ x: 0.32, y: 0, z: 1, heading: 0, tint: '#ecac36', dummy: true }] : [],

@@ -39,6 +39,7 @@ export function makeWalkers({ obstacles, heightAt, surfaceAt }) {
       pace: 0.91 + id % 5 * 0.105, angle: Math.atan2(dx, dz),
       baseX: a[0] + dx * start, baseZ: a[1] + dz * start, dx: dx * range, dz: dz * range,
       length: length * range, tint: coats[id % coats.length], umbrella: id % 3 !== 0, heading: 0,
+      pause: 0,
     });
   }
 
@@ -54,25 +55,30 @@ export function makeWalkers({ obstacles, heightAt, surfaceAt }) {
       if (danger && clearance > 1) {
         const away = actor.dx * dx + actor.dz * dz;
         actor.direction = away >= 0 ? 1 : -1;
+        actor.pause = 0;
       }
       const atEnd = actor.direction < 0 ? actor.progress <= 0 : actor.progress >= 1;
       const pace = actor.pace * (danger ? 2.25 : 1);
-      actor.moving = !danger || !atEnd;
+      actor.pause = Math.max(0, actor.pause - dt);
+      actor.moving = actor.pause <= 0 && (!danger || !atEnd);
       if (actor.moving) actor.progress += actor.direction * pace * dt / actor.length;
-      if (actor.progress <= 0 || actor.progress >= 1) {
-        if (!danger) actor.direction *= -1;
+      if (actor.moving && (actor.progress <= 0 || actor.progress >= 1)) {
+        if (!danger) { actor.direction *= -1; actor.pause = .30 + actor.pace * .34; }
         actor.progress = Math.max(0, Math.min(1, actor.progress));
       }
       actor.x = actor.baseX + actor.dx * actor.progress;
       actor.z = actor.baseZ + actor.dz * actor.progress;
       actor.y = heightAt(actor.x, actor.z);
-      actor.heading = actor.angle + (actor.direction < 0 ? Math.PI : 0);
+      const aim = actor.angle + (actor.direction < 0 ? Math.PI : 0);
+      const turn = Math.atan2(Math.sin(aim - actor.heading), Math.cos(aim - actor.heading));
+      actor.heading = dt > 0 ? actor.heading + turn * (1 - Math.exp(-dt * (danger ? 11 : 6))) : aim;
       if (actor.moving) actor.phase += dt * pace * 7.7;
     }
   }
   step(0, { x: 1000, z: 1000, speed: 0 });
+  const initial = actors.map(actor => ({...actor}));
   function reset() {
-    for (const actor of actors) actor.rig = null;
+    actors.forEach((actor, i) => Object.assign(actor, initial[i], {rig: null}));
     step(0, { x: 1000, z: 1000 });
   }
   return { actors, step, reset };

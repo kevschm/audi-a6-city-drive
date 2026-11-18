@@ -52,7 +52,7 @@ function collide(vx, vz, obstacle) {
 test('an offset bumper hit damages the near wheel and rotates the car while a centered hit only loads the axle', () => {
   const offset = collide(0, 22, { x0: -0.91, x1: -0.62, z0: 2.50, z1: 2.70 });
   const center = collide(0, 22, { x0: -4, x1: 4, z0: 2.50, z1: 2.70 });
-  assert.ok(Math.abs(offset.impact.localX + 0.62) < 0.005);
+  assert.ok(Math.abs(offset.impact.localX + 0.755) < 0.005);
   assert.ok(Math.abs(offset.impact.z - 2.50) < 0.005);
   assert.equal(offset.impact.wheel, 0);
   assert.ok(offset.wheelDamage[0] > 0.10);

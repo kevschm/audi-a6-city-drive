@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#151b1b">
-  <meta name="game-version" content="0.9.0">
+  <meta name="game-version" content="0.10.0">
   <title>Audi A6 City Drive</title>
   <meta name="game-build" content="WEBGL-ANDROID-20261118B">
-  <link rel="stylesheet" href="./src/styles.css?drive-090">
+  <link rel="stylesheet" href="./src/styles.css?drive-0100">
 </head>
 <body>
   <main id="game">
@@ -44,6 +44,7 @@
         <div class="lab-tools">
           <button id="trackCam" type="button" aria-pressed="false" title="Feste Kamera am Streckenrand">Streckenkamera</button>
           <button id="slowLab" type="button" aria-pressed="false" title="Zeitlupe (X)">Zeitlupe</button>
+          <button id="replayLab" type="button" aria-pressed="false" title="Die ersten 30 Sekunden mit den aufgezeichneten Eingaben wiederholen">Replay</button>
         </div>
       </div>
       <span id="labStatus">Anfahrt</span>
@@ -51,6 +52,7 @@
         <div><dt>Tempo</dt><dd id="hitSpeed"></dd></div>
         <div><dt title="Winkel zur Kontaktnormalen. 0° entspricht einem senkrechten Aufprall.">Winkel</dt><dd id="hitAngle"></dd></div>
         <div><dt title="Berechneter Energieverlust entlang der Kontaktnormalen">Energieverlust</dt><dd id="hitEnergy"></dd></div>
+        <div><dt title="Modellierte bleibende Stauchung der Längsträger am getroffenen Ende, links und rechts.">Stauchung L/R</dt><dd id="hitRails"></dd></div>
         <div><dt title="Betrag der impulsbedingten Geschwindigkeitsänderung je Simulationsschritt. Kein Spitzenwert.">Schrittmittel</dt><dd id="hitG"></dd></div>
       </dl>
     </section>
@@ -144,6 +146,6 @@
       document.getElementById('errorModal').classList.remove('hidden');
     }, true);
   </script>
-  <script type="module" src="./src/main.js?drive-090"></script>
+  <script type="module" src="./src/main.js?drive-0100"></script>
 </body>
 </html>

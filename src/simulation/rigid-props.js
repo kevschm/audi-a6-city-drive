@@ -1,5 +1,5 @@
 import { CONTACT_MATERIALS, solveContact } from './contact-impulse.js';
-import { detachableParts } from './vehicle-damage.js';
+import { detachableParts, wheelParts } from './vehicle-damage.js';
 
 const propTypes = {
   cone: { mass: 5, radius: 0.21, floor: 0.25, material: 'plastic' },
@@ -22,7 +22,11 @@ export function createPropWorld(groundHeightAt, obstacles, bounds) {
   }
 
   function detach(car, impact) {
-    const spec = detachableParts[impact.detached];
+    release(detachableParts[impact.detached], car, impact);
+    release(wheelParts[impact.lostWheel], car, impact);
+  }
+
+  function release(spec, car, impact) {
     if (!spec || bodies.filter(body => body.debris).length >= MAX_DEBRIS) return;
     const sin = Math.sin(car.heading), cos = Math.cos(car.heading);
     bodies.push({ ...spec, debris: true, asleep: false, clearance: 0.36, pitch: 0,
@@ -66,7 +70,14 @@ export function createPropWorld(groundHeightAt, obstacles, bounds) {
     if (body.y <= ground) {
       body.y = ground;
       body.vy = body.vy < -0.65 ? -body.vy * 0.26 : 0;
-      const drag = Math.exp(-dt * (body.kind === 'drum' ? 1.7 : 3.1));
+      const rolling = body.kind === 'wheel';
+      const drag = Math.exp(-dt * (rolling ? .85 : body.kind === 'drum' ? 1.7 : 3.1));
+      if (rolling) {
+        const sin = Math.sin(body.heading), cos = Math.cos(body.heading);
+        const scrub = (body.vx * cos - body.vz * sin) * (1 - Math.exp(-4 * dt));
+        body.vx -= cos * scrub; body.vz += sin * scrub;
+        body.tumble += ((body.vx * sin + body.vz * cos) / body.radius - body.tumble) * (1 - Math.exp(-7 * dt));
+      }
       body.vx *= drag;
       body.vz *= drag;
       body.yaw *= drag;

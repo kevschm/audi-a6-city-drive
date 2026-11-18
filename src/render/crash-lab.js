@@ -1,3 +1,4 @@
+import { tripHeight } from '../simulation/rollover.js';
 import { Mesh } from './mesh.js';
 
 export function createLabModels(renderer) {
@@ -26,8 +27,14 @@ export function createLabModels(renderer) {
   renderer.upload(landscape);
   const obstacleModels = new Map();
 
-  function chunks(obstacles) {
-    return obstacles.map(({ x0, x1, z0, z1 }) => {
+  const bed = new Mesh();
+  bed.box(0, .003, -8, 17.5, tripHeight, 8, '#a9a394', 'paving');
+  for (let z = -8; z < 8; z += 1) bed.box(-.006, .034, z, .014, tripHeight + .002, z + .48, '#e1c284');
+  renderer.upload(bed);
+  const skidBed = { mesh: bed, minX: -.01, maxX: 17.5, minZ: -8, maxZ: 8, minY: 0, maxY: tripHeight + .01 };
+
+  function chunks(obstacles, lateral) {
+    const walls = obstacles.map(({ x0, x1, z0, z1 }) => {
       const key = [x0, x1, z0, z1].join(',');
       if (obstacleModels.has(key)) return obstacleModels.get(key);
       const mesh = new Mesh();
@@ -47,6 +54,8 @@ export function createLabModels(renderer) {
       obstacleModels.set(key, chunk);
       return chunk;
     });
+    if (lateral) walls.push(skidBed);
+    return walls;
   }
 
   return { landscape, chunks };

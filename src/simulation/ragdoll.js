@@ -6,6 +6,7 @@ const restPose = [
   [0.096, 0.83, 0], [0.12, 0.46, 0.035], [0.12, 0.11, 0.047],
 ];
 const radii = [0.15, 0.17, 0.12, 0.075, 0.065, 0.05, 0.075, 0.065, 0.05, 0.09, 0.075, 0.075, 0.09, 0.075, 0.075];
+const nodeMass = [14, 20, 5, 2, 1.6, .8, 2, 1.6, .8, 6.7, 4.2, 1.6, 6.7, 4.2, 1.6];
 export const ragdollSegments = [
   [0, 1, 'coat'], [1, 2, 'neck'], [3, 4, 'arm'], [4, 5, 'arm'], [6, 7, 'arm'], [7, 8, 'arm'],
   [9, 10, 'leg'], [10, 11, 'leg'], [12, 13, 'leg'], [13, 14, 'leg'],
@@ -37,17 +38,18 @@ export function walkerContact(actor, previous, player) {
   return true;
 }
 
-export function createRagdoll(actor, vx, vz, dt) {
+export function createRagdoll(actor, vx, vz, dt, offset = 0) {
   const sin = Math.sin(actor.heading), cos = Math.cos(actor.heading);
   const speed = Math.hypot(vx, vz);
   const push = Math.min(0.71, 11.5 / Math.max(0.1, speed));
   const nodes = restPose.map(([x, y, z], i) => {
     const position = [actor.x + x * cos + z * sin, actor.y + y, actor.z - x * sin + z * cos];
-    const transfer = y < 1.1 ? 1 : 0.63;
+    const across = speed > .01 ? ((position[0] - actor.x) * vz - (position[2] - actor.z) * vx) / speed : 0;
+    const transfer = (y < 1.1 ? 1 : 0.63) * (1 - .44 * clamp(offset, -1, 1) * across);
     const lift = Math.min(3.8, speed * 0.15) * (y < 1.1 ? 1 : 0.73);
     return { position, prior: [position[0] - vx * push * transfer * dt,
       position[1] - lift * dt, position[2] - vz * push * transfer * dt],
-      radius: radii[i], inverseMass: i < 2 ? 0.25 : i === 2 ? 0.52 : 1 };
+      radius: radii[i], inverseMass: 1 / nodeMass[i] };
   });
   return { nodes, age: 0, rest: 0 };
 }
@@ -70,24 +72,25 @@ export function stepRagdoll(rig, dt, heightAt, obstacles, props) {
       const nx = dx / distance, nz = dz / distance;
       const relative = (vx / dt - prop.vx) * nx + (vz / dt - prop.vz) * nz;
       if (relative <= 0.15) continue;
-      const push = Math.min(3.5, relative * 4.7 / (prop.mass + 4.7));
+      const impulse = relative / (node.inverseMass + 1 / prop.mass);
+      const push = impulse / prop.mass;
       prop.vx += push * nx; prop.vz += push * nz;
       prop.tumble += push * 0.65;
       prop.asleep = false;
-      prior[0] += vx * 0.23; prior[2] += vz * 0.23;
+      prior[0] += nx * impulse * node.inverseMass * dt;
+      prior[2] += nz * impulse * node.inverseMass * dt;
     }
   }
   for (let iteration = 0; iteration < 6; iteration++) {
     for (const { a, b, min, distance } of links) {
       const one = rig.nodes[a], two = rig.nodes[b], p = one.position, q = two.position;
-      const delta = q.map((v, axis) => v - p[axis]);
-      const length = Math.hypot(...delta);
+      const dx = q[0] - p[0], dy = q[1] - p[1], dz = q[2] - p[2];
+      const length = Math.hypot(dx, dy, dz);
       if (length < 1e-6 || (min && length >= min)) continue;
       const factor = (length - (min || distance)) / length / (one.inverseMass + two.inverseMass);
-      for (let axis = 0; axis < 3; axis++) {
-        p[axis] += delta[axis] * factor * one.inverseMass;
-        q[axis] -= delta[axis] * factor * two.inverseMass;
-      }
+      const w1 = factor * one.inverseMass, w2 = factor * two.inverseMass;
+      p[0] += dx * w1; p[1] += dy * w1; p[2] += dz * w1;
+      q[0] -= dx * w2; q[1] -= dy * w2; q[2] -= dz * w2;
     }
     for (const { position: p, prior, radius } of rig.nodes) {
       const ground = heightAt(p[0], p[2]) + radius;
@@ -117,10 +120,17 @@ export function stepPedestrianRigs(actors, dt, previous, player, heightAt, obsta
   let count = actors.reduce((total, actor) => total + Number(Boolean(actor.rig)), 0);
   for (const actor of actors) {
     if (!actor.rig && count < 3 && Math.hypot(player.vx, player.vz) > 2.2 && walkerContact(actor, previous, player)) {
-      actor.rig = createRagdoll(actor, player.vx, player.vz, dt);
-      player.vx *= 0.975;
-      player.vz *= 0.975;
-      player.speed *= 0.975;
+      const sin = Math.sin(player.heading), cos = Math.cos(player.heading);
+      const dx = actor.x - player.x, dz = actor.z - player.z;
+      actor.rig = createRagdoll(actor, player.vx, player.vz, dt, dx * cos - dz * sin);
+      let ix = 0, iz = 0;
+      for (const node of actor.rig.nodes) {
+        ix += (node.position[0] - node.prior[0]) / (dt * node.inverseMass);
+        iz += (node.position[2] - node.prior[2]) / (dt * node.inverseMass);
+      }
+      player.vx -= ix / player.mass; player.vz -= iz / player.mass;
+      player.yaw += (dx * iz - dz * ix) / player.inertia;
+      player.speed = player.vx * sin + player.vz * cos;
       count++;
     }
     if (!actor.rig) continue;
