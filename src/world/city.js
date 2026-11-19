@@ -481,6 +481,16 @@ function park(mesh, obstacles, x, z) {
     footprint(obstacles, px - 1.8, pz - 1.2, px + 1.8, pz + 1.2, 'planter');
     bench(mesh, obstacles, x + dx * 6.4, z + dz * 4.8);
   }
+  if (x > 0) {
+    // Stone drinking fountain at the intersection of the two park walks.
+    mesh.cylY(x, CURB+.025, z, 2.15, .18, '#988e7a', 24, 'paving');
+    mesh.cylY(x, CURB+.20, z, 1.94, .32, '#b5ab94', 24);
+    mesh.cylY(x, CURB+.52, z, 1.76, .012, '#799b92', 24, 'water');
+    mesh.cylY(x, CURB+.53, z, .32, 1.12, '#887860', 12);
+    mesh.sphere(x, 1.94, z, .81,.24,.81, '#9c927e',16,5);
+    mesh.cylY(x, 2.05, z, .11, .46, '#676d60', 12, 'metal');
+    footprint(obstacles,x-1.94,z-1.94,x+1.94,z+1.94,'park-fountain');
+  }
   const walk = '#bdb29b';
   ground(mesh, x - 2.4, z + 22, x + 2.4, z + 26.4, CURB + .018, walk, 'paving');
   for (const dir of [-1, 1]) {
@@ -725,7 +735,20 @@ function sidewalkBlock(mesh, obstacles, ix, iz, x, z, kind) {
   }
 }
 
+function waterTower(mesh, obstacles, x, z) {
+  const steel = '#65746f';
+  mesh.cylY(x, CURB, z, 2.6, 1.2, '#9f9680', 16);
+  mesh.cylY(x, 1.3, z, 2.18, 13, '#956c55', 16, 'brick');
+  mesh.cylY(x, 13.2, z, 3.4, 1.0, steel, 20, 'metal');
+  mesh.cylY(x, 14.2, z, 3.8, 4.7, '#87958a', 20, 'metal');
+  for (const y of [14.25, 15.8, 17.35, 18.8]) mesh.cylY(x, y, z, 3.88, .13, steel, 20, 'metal');
+  const rim = i => [x + 3.98 * Math.cos(i*Math.PI/10), 19, z + 3.98 * Math.sin(i*Math.PI/10)];
+  for (let i = 0; i < 20; i++) mesh.tri(rim(i), [x,20.75,z], rim(i+1), '#645e52', 'roof');
+  footprint(obstacles, x-2.6, z-2.6, x+2.6, z+2.6, 'water-tower');
+}
+
 function foundry(mesh, obstacles, objects, x, z) {
+  waterTower(mesh, obstacles, x - 20, z - 15);
   const left = x - 21, right = x + 16, back = z + 18, front = z - 4, eaves = 5.6;
   mesh.box(left, CURB, front, right, eaves, back, '#9a6450', 'brick');
   footprint(obstacles, left, front, right, back, 'building');
@@ -771,6 +794,16 @@ function neighborhood(mesh, obstacles, random, ix, iz, x, z, kind) {
       const frontage = side > 0 ? 1 : -1;
       building(mesh, obstacles, random, x + street, z + side * 9.5, 13 + random() * 2, 13 + random() * 2,
         random() < .35 ? 3 : 2, 'gable', palette(side + 1), frontage);
+      const gateZ = z + side * 21;
+      const cx = x + street;
+      ground(mesh, cx - 1.05, Math.min(gateZ, z + side * 16), cx + 1.05, Math.max(gateZ, z + side * 16), CURB + .028, '#b4a891', 'paving');
+      for (const wing of [-1, 1]) {
+        const mid = cx + wing * 4.3;
+        mesh.box(mid-2.95, CURB, gateZ-.22, mid+2.95, .70, gateZ+.22, '#aa9986', 'brick');
+        mesh.box(mid-3, .70, gateZ-.26, mid+3, .80, gateZ+.26, '#cec1aa');
+        footprint(obstacles, mid-3, gateZ-.26, mid+3, gateZ+.26, 'garden-wall');
+        for (let n = -1; n <= 1; n++) mesh.sphere(mid+n*1.67,.89,gateZ-side*.62,1.13,.59,.65,'#59744b',7,4,'foliage');
+      }
       tree(mesh, obstacles, x + street + side * 4, z - side * 13.5, .76 + .28 * random());
     }
     return;

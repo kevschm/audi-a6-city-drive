@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#151b1b">
-  <meta name="game-version" content="0.10.0">
+  <meta name="game-version" content="0.11.0">
   <title>Audi A6 City Drive</title>
   <meta name="game-build" content="WEBGL-ANDROID-20261118B">
-  <link rel="stylesheet" href="./src/styles.css?drive-0100">
+  <link rel="stylesheet" href="./src/styles.css?drive-0110">
 </head>
 <body>
   <main id="game">
@@ -15,7 +15,7 @@
 
     <header class="brand">
       <div class="wordmark">CITY DRIVE<span></span></div>
-      <h1>Audi A6 C4 Avant</h1>
+      <h1>Audi A6 C5 Avant</h1>
     </header>
 
     <div class="district panel" id="place">Innenstadt · Asphalt</div>
@@ -28,7 +28,6 @@
         <button id="pauseBtn" type="button" title="Spiel pausieren (P)"><b aria-hidden="true">Ⅱ</b><span>Pause</span></button>
         <button id="lightBtn" type="button" title="Scheinwerfer (L)" aria-pressed="false"><b aria-hidden="true">✦</b><span>Licht aus</span></button>
         <button id="trialBtn" type="button" title="Bahnhofsrunde (T)" aria-pressed="false"><b aria-hidden="true">◴</b><span>Zeitfahrt</span></button>
-        <button id="labBtn" type="button" title="Crashlabor öffnen (B)" aria-pressed="false"><b aria-hidden="true">◎</b><span>Crashlabor</span></button>
         <button id="driveReset" class="drive-reset" type="button" title="Fahrzeug und Schäden zurücksetzen (R)"><b aria-hidden="true">↺</b><span>Reset</span></button>
       </div>
     </aside>
@@ -36,25 +35,6 @@
     <section id="routePanel" class="route panel" aria-label="Bahnhofsrunde" hidden>
       <div><b>Bahnhofsrunde</b><span id="trialPhase">Zum Starttor</span></div>
       <div><b id="trialTime">0:00,00</b><span id="trialBest"></span></div>
-    </section>
-
-    <section class="panel lab-report" id="labReport" aria-label="Crash-Telemetrie" hidden>
-      <div class="lab-report-header">
-        <b id="labName">Crashlabor</b>
-        <div class="lab-tools">
-          <button id="trackCam" type="button" aria-pressed="false" title="Feste Kamera am Streckenrand">Streckenkamera</button>
-          <button id="slowLab" type="button" aria-pressed="false" title="Zeitlupe (X)">Zeitlupe</button>
-          <button id="replayLab" type="button" aria-pressed="false" title="Die ersten 30 Sekunden mit den aufgezeichneten Eingaben wiederholen">Replay</button>
-        </div>
-      </div>
-      <span id="labStatus">Anfahrt</span>
-      <dl id="labValues" hidden>
-        <div><dt>Tempo</dt><dd id="hitSpeed"></dd></div>
-        <div><dt title="Winkel zur Kontaktnormalen. 0° entspricht einem senkrechten Aufprall.">Winkel</dt><dd id="hitAngle"></dd></div>
-        <div><dt title="Berechneter Energieverlust entlang der Kontaktnormalen">Energieverlust</dt><dd id="hitEnergy"></dd></div>
-        <div><dt title="Modellierte bleibende Stauchung der Längsträger am getroffenen Ende, links und rechts.">Stauchung L/R</dt><dd id="hitRails"></dd></div>
-        <div><dt title="Betrag der impulsbedingten Geschwindigkeitsänderung je Simulationsschritt. Kein Spitzenwert.">Schrittmittel</dt><dd id="hitG"></dd></div>
-      </dl>
     </section>
 
     <section class="cluster panel" aria-label="Instrumente">
@@ -93,7 +73,7 @@
     <div class="modal" id="intro">
       <section class="sheet" aria-labelledby="introTitle">
         <div class="wordmark">CITY DRIVE<span></span></div>
-        <h2 id="introTitle">Audi A6<br>C4 Avant</h2>
+        <h2 id="introTitle">Audi A6<br>C5 Avant</h2>
         <button class="primary" type="button" id="startBtn" disabled>Spiel lädt …</button>
         <p class="intro-desktop">Fahren mit WASD oder den Pfeiltasten.</p>
         <p class="intro-touch">Spiele quer. Ziehe in der Szene zum Drehen der Kamera und zoome mit zwei Fingern.</p>
@@ -115,21 +95,6 @@
         <p class="pause-help">Gamepad mit Standardbelegung · linker Stick, RT, LT und A</p>
       </section>
     </div>
-    <div class="modal hidden" id="labModal">
-      <section class="sheet" aria-labelledby="labTitle" role="dialog" aria-modal="true">
-        <h2 id="labTitle">Crashlabor</h2>
-        <div class="settings">
-          <label class="setting"><span>Szenario</span><select id="labScenario"></select></label>
-          <label class="lab-speed"><span>Starttempo</span><output id="labSpeedValue" for="labSpeed">80 km/h</output>
-            <input id="labSpeed" type="range" min="10" max="130" step="5" value="80"></label>
-        </div>
-        <div class="pause-actions">
-          <button class="primary" id="beginLab" type="button">Test starten</button>
-          <button class="secondary" id="exitLab" type="button">Zur Stadt</button>
-          <button class="secondary" id="closeLab" type="button">Schließen</button>
-        </div>
-      </section>
-    </div>
     <div class="modal hidden" id="errorModal">
       <section class="sheet" role="alert">
         <h2>Grafik nicht verfügbar</h2>
@@ -146,6 +111,6 @@
       document.getElementById('errorModal').classList.remove('hidden');
     }, true);
   </script>
-  <script type="module" src="./src/main.js?drive-0100"></script>
+  <script type="module" src="./src/main.js?drive-0110"></script>
 </body>
 </html>

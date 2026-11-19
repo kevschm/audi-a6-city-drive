@@ -68,7 +68,12 @@ export class Mesh {
   sphere(x, y, z, rx, ry, rz, fill, slices = 9, stacks = 5, material) {
     function point(i, j) {
       const a = i * 2 * Math.PI / slices, b = -Math.PI / 2 + j * Math.PI / stacks;
-      return [x + rx * Math.cos(a) * Math.cos(b), y + ry * Math.sin(b), z + rz * Math.sin(a) * Math.cos(b)];
+      const dx = Math.cos(a) * Math.cos(b), dy = Math.sin(b), dz = Math.sin(a) * Math.cos(b);
+      // Vary foliage silhouettes without adding geometry. Cartesian harmonics
+      // keep the poles and the seam shared by adjacent patches.
+      const scale = material === 'foliage' ? 1 + .14 * Math.sin(4*dx + 7*dy + x)
+        * Math.cos(6*dz - 3*dy + z) + .08 * Math.sin(9*dx - 5*dz + y) : 1;
+      return [x + rx * dx * scale, y + ry * dy * scale, z + rz * dz * scale];
     }
     const normal = p => {
       const n = [(p[0] - x) / (rx * rx), (p[1] - y) / (ry * ry), (p[2] - z) / (rz * rz)];

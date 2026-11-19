@@ -62,6 +62,12 @@ void main() {
   float density = smoothstep(0.49, 0.70, layers) * smoothstep(0.01, 0.23, ray.y);
   vec3 cloudLight = mix(vec3(0.95, 0.94, 0.91), vec3(0.47, 0.36, 0.37) + vec3(0.32, 0.18, 0.11) * pow(sun, 5.0), uDusk);
   rgb = mix(rgb, cloudLight, density * 0.75);
+  // Sample on a circle so the ridgeline joins seamlessly behind the camera.
+  vec2 bearing = ray.xz / max(0.001, length(ray.xz));
+  float ridge = noise2(bearing * 4.6 + vec2(12.1, 5.2)) * 0.086 + noise2(bearing * 16.1) * 0.025;
+  float foothill = noise2(bearing * 6.1 + vec2(7.0, 2.0)) * 0.044 + noise2(bearing * 45.0) * 0.008;
+  rgb = mix(rgb, mix(vec3(0.52,0.61,0.61),vec3(0.37,0.32,0.36),uDusk), 1.0-smoothstep(ridge,ridge+0.003,ray.y));
+  rgb = mix(rgb, mix(vec3(0.38,0.47,0.40),vec3(0.23,0.24,0.24),uDusk), 1.0-smoothstep(foothill,foothill+0.002,ray.y));
   rgb += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
   gl_FragColor = vec4(rgb, 1.0);
 }
