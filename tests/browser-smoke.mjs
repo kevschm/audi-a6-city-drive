@@ -223,36 +223,7 @@ try {
   assert.equal(await evaluate(`document.getElementById('runningGear').hidden`), true);
   assert.equal((await inspect()).speed, '0');
 
-  await click('#labBtn');
-  assert.equal(await evaluate(`document.getElementById('labModal').classList.contains('hidden')`), false);
-  const chooseLab = (scenario, kmh) => evaluate(`(() => {
-    document.getElementById('labScenario').value = ${JSON.stringify(scenario)};
-    const speed = document.getElementById('labSpeed');
-    speed.value = ${kmh};
-    speed.dispatchEvent(new Event('input'));
-  })()`);
-  await chooseLab('offset', 105);
-  assert.equal(await evaluate(`document.getElementById('labSpeedValue').textContent`), '105 km/h');
-  await snap('a6-v09-lab-settings');
-  await click('#beginLab');
-  assert.equal(await evaluate(`document.getElementById('labReport').hidden`), false);
-  await click('#trackCam');
-  assert.equal(await evaluate(`document.getElementById('trackCam').getAttribute('aria-pressed')`), 'true');
-  await click('#slowLab');
-  assert.equal(await evaluate(`document.getElementById('slowLab').getAttribute('aria-pressed')`), 'true');
-  await waitFor('Crash lab telemetry', () => evaluate(`!document.getElementById('labValues').hidden`));
-  const crashLab = await evaluate(`Object.fromEntries(['hitSpeed','hitAngle','hitEnergy','hitG','labStatus'].map(id => [id, document.getElementById(id).textContent]))`);
-  assert.match(crashLab.hitSpeed, /10[0-5] km\/h/);
-  assert.match(crashLab.hitEnergy, /kJ/);
-  assert.match(crashLab.labStatus, /Motor ausgefallen/);
-  await delay(650);
-  await snap('a6-v09-offset-crash');
-  await click('#driveReset');
-  assert.equal(await evaluate(`document.getElementById('labValues').hidden`), true);
-  assert.equal(await evaluate(`document.getElementById('condition').textContent`), 'Intakt');
-  await click('#labBtn');
-  await chooseLab('chain', 105);
-  await click('#beginLab');
+  assert.equal(await evaluate("document.querySelector('#labBtn, #labModal, #labReport')"), null);
   await click('#qualityBtn');
   await click('#qualityBtn');
   await send('Performance.enable');
@@ -281,28 +252,6 @@ try {
   frameTimes.mainThreadBusyPct = Math.round(100 * (after.TaskDuration - before.TaskDuration) / (after.Timestamp - before.Timestamp));
   frameTimes.jsHeapMiB = Math.round(after.JSHeapUsedSize / 1048576 * 10) / 10;
   assert.ok(frameTimes?.count > 8);
-  await waitFor('Chain lab collision', () => evaluate(`!document.getElementById('labValues').hidden`));
-  await snap('a6-v09-chain');
-  await click('#labBtn');
-  await chooseLab('rollover', 100);
-  await click('#beginLab');
-  await waitFor('Roof impact after a lateral trip', () => evaluate(`document.getElementById('labStatus').textContent.includes('Dachstauchung')`));
-  await snap('Audi-0.10.0-Kippversuch');
-  await waitFor('Sled settles', () => evaluate(`document.getElementById('speed').textContent === '0'`));
-  await delay(650);
-  const originalRoof = await evaluate(`document.getElementById('labStatus').textContent`);
-  await click('#replayLab');
-  await waitFor('Recorded run reaches its stop point', () => evaluate(`document.getElementById('replayLab').textContent === 'Erneut abspielen'`));
-  assert.equal(await evaluate(`document.getElementById('labStatus').textContent`), originalRoof);
-  await click('#driveReset');
-  assert.equal(await evaluate(`document.getElementById('replayLab').getAttribute('aria-pressed')`), 'false');
-  await click('#labBtn');
-  await chooseLab('wheel', 100);
-  await click('#beginLab');
-  await waitFor('Right front wheel separates', () => evaluate(`document.getElementById('runningGear').textContent === 'Vorderrad rechts abgerissen'`));
-  await click('#labBtn');
-  await click('#exitLab');
-  assert.equal(await evaluate(`document.getElementById('labReport').hidden`), true);
   await click('#qualityBtn');
 
   await send('Emulation.setDeviceMetricsOverride', {
@@ -346,17 +295,12 @@ try {
     await touch('touchStart', [{ ...point, id: 1 }]);
     await touch('touchEnd', []);
   };
-  await tap('#labBtn');
-  await chooseLab('dummy', 65);
-  await tap('#beginLab');
-  await waitFor('Lab dummy receives and moves with a contact', () => evaluate(`document.getElementById('labStatus').textContent === 'Dummy in Bewegung'`));
-  await tap('#slowLab');
-  assert.equal(await evaluate(`document.getElementById('slowLab').getAttribute('aria-pressed')`), 'true');
-  await snap('a6-v09-touch-lab');
+  await tap('#driveReset');
+  assert.equal((await inspect()).speed, '0');
   assert.equal(await evaluate(`document.getElementById('view').getContext('webgl').getError()`), 0);
   assert.deepEqual(exceptions, []);
   assert.deepEqual(failedResources, []);
-  console.log(JSON.stringify({ gpu, desktop, stationRound, impact, crashLab, frameTimes, mobile, exceptions, failedResources }, null, 2));
+  console.log(JSON.stringify({ gpu, desktop, stationRound, impact, frameTimes, mobile, exceptions, failedResources }, null, 2));
 } catch (error) {
   console.error(error);
   console.error({ exceptions, failedResources, browserLog });

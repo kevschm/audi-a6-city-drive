@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCrashScenario } from '../src/simulation/crash-lab.js';
-import { createLabRecording } from '../src/simulation/lab-recording.js';
-import { stepRollover } from '../src/simulation/rollover.js';
+import { createCrashScenario } from './contact-fixtures.mjs';
 import { createPropWorld } from '../src/simulation/rigid-props.js';
 import { moveVehicle } from '../src/simulation/vehicle-collision.js';
 import { createVehicleState, stepVehicle } from '../src/simulation/vehicle.js';
@@ -47,39 +45,6 @@ test('braking on split friction creates mirrored wheel forces and yaw toward the
   });
   assert.ok(results[1].tireBrake[1] > results[1].tireBrake[0] && results[1].yaw > .05);
   assert.ok(Math.abs(results[0].yaw + results[1].yaw) < 1e-8);
-});
-
-test('a lateral sled can stop before the curb or roll onto its roof and settle from contact impulses', () => {
-  for (const speed of [20, 100]) {
-    const car = Object.assign(createVehicleState(), createCrashScenario('rollover', speed).spawn);
-    let peak = 0;
-    for (let i = 0; i < 480; i++) {
-      stepRollover(car, dt);
-      peak = Math.max(peak, Math.abs(car.roll));
-      assert.ok(Number.isFinite(car.sled.vy) && car.sled.y > .25);
-    }
-    if (speed === 20) assert.ok(peak < .01 && car.roofCrush.every(d => d === 0));
-    else assert.ok(peak > Math.PI && Math.max(...car.roofCrush) > .06);
-    assert.ok(Math.abs(car.rollRate) < .04 && Math.abs(car.vx) < .05);
-  }
-});
-
-test('input tape reproduces analog steering, changing grip and persistent damage tick for tick; its length is bounded', () => {
-  const tape = createLabRecording();
-  const fresh = () => Object.assign(createVehicleState(), { vz: 18 });
-  const car = fresh(), replay = fresh(), controls = {};
-  const world = { obstacles: [{ x0: -.3, x1: 4, z0: 9, z1: 10 }] };
-  for (let i = 0; i < 180; i++) {
-    const input = {right: i < 18 ? .125 : 0, throttle: .34, brake: i > 34 ? .25 : 0};
-    world.wetness = i > 20 ? .8 : 0;
-    tape.record(input, world.wetness); stepVehicle(car, input, dt, world);
-  }
-  assert.ok(car.railCrush.some(d => d > .1));
-  tape.rewind();
-  while (tape.next(controls, world)) stepVehicle(replay, controls, dt, world);
-  assert.deepEqual(replay, car);
-  for (let i = 0; i < 2000; i++) tape.record({}, 0);
-  assert.equal(tape.length, 1800);
 });
 
 test('a concentrated wheel strike releases exactly one physical wheel and the unsupported corner drops', () => {

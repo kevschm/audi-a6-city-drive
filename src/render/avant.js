@@ -1,8 +1,8 @@
-// Original C4 Avant geometry in metres. The model faces +Z, with Y up.
+// Photo-referenced C5 Avant geometry in metres. The model faces +Z, with Y up.
 export const AVANT_WHEELS = Object.freeze({ halfTrack: .759, radius: .315, front: 1.39, rear: -1.30 });
 
 const rgb = (r, g, b) => [r / 255, g / 255, b / 255];
-const lacquer = rgb(19, 23, 28);
+const lacquer = rgb(16, 19, 21);
 const paintEdge = rgb(23, 28, 34);
 const rubber = rgb(23, 25, 27);
 const seal = rgb(15, 19, 23);
@@ -103,7 +103,11 @@ function bodySection(z) {
 
 function wheelOpening(z) {
   const distance = Math.min(Math.abs(z - AVANT_WHEELS.front), Math.abs(z - AVANT_WHEELS.rear));
-  if (distance >= archRadius - 1e-8) return sillHeight;
+  if (distance >= archRadius - 1e-8) {
+    // The sill sweeps up behind each wheel into the valance.
+    const t = Math.min(1, Math.max(0, (Math.abs(z) - 1.72) / .61));
+    return sillHeight + .135 * t * t * (3 - 2 * t);
+  }
   return AVANT_WHEELS.radius + Math.sqrt(archRadius ** 2 - distance ** 2);
 }
 
@@ -114,7 +118,7 @@ function flankPoint(side, z, y) {
     : lerp(flank, shoulder, ((y - widestY) / (shoulderY - widestY)) ** 1.35);
   const axleDistance = Math.min(Math.hypot(z - AVANT_WHEELS.front, y - AVANT_WHEELS.radius),
     Math.hypot(z - AVANT_WHEELS.rear, y - AVANT_WHEELS.radius));
-  const lip = .019 * Math.exp(-((axleDistance - archRadius - .032) ** 2) / .0028);
+  const lip = .030 * Math.exp(-((axleDistance - archRadius - .032) ** 2) / .0028);
   return [side * (width + lip), y, z];
 }
 
@@ -138,7 +142,7 @@ function deckPoint(side, z, fraction) {
   const [, , , width, height, crown] = bodySection(z);
   const ridge = Math.exp(-((Math.abs(fraction) - .72) ** 2) / .013);
   const hood = Math.max(0, Math.min(1, (z - .92) * 3, (2.39 - z) * 7));
-  return [side * width * fraction, crown - (crown - height) * Math.abs(fraction) ** 2.1 + .023 * ridge * hood, z];
+  return [side * width * fraction, crown - (crown - height) * Math.abs(fraction) ** 2.1 + .010 * ridge * hood, z];
 }
 
 function buildShell(body, paint, components) {
@@ -178,8 +182,8 @@ function buildShell(body, paint, components) {
         const from = fractions[strip - 1], to = fractions[strip];
         panel(paint, up, paintEdge, [deck(za, from), deck(zb, from), deck(zb, to), deck(za, to)], deckNormal);
       }
-      const trimY = .714;
-      trace(body, [bodyPoint(side, za, trimY), bodyPoint(side, zb, trimY)], .029, out, molding);
+      const trimY = .595;
+      trace(body, [bodyPoint(side, za, trimY), bodyPoint(side, zb, trimY)], .014, out, molding);
       if (wheelOpening((za + zb) / 2) === sillHeight) {
         trace(body, [bodyPoint(side, za, .284), bodyPoint(side, zb, .284)], .032, out, rubber);
       }
@@ -190,7 +194,7 @@ function buildShell(body, paint, components) {
     const z = end * 2.39, [, low, , topWidth, top, crown] = bodySection(z);
     const out = [0, 0, end];
     const sillZ = z - end * .075;
-    const nose = (x, y) => [x * lerp(low, topWidth, y), lerp(sillHeight, top, y), lerp(sillZ, z, y)];
+    const nose = (x, y) => [x * lerp(low, topWidth, y), lerp(wheelOpening(z), top, y), lerp(sillZ, z, y)];
     // Keep enough vertices across both ends for a dent to follow an offset hit.
     for (let i = -5; i < 5; i++) {
       const a = i / 5, b = (i + 1) / 5;
@@ -202,7 +206,7 @@ function buildShell(body, paint, components) {
         [a * topWidth, lerp(top, crown, 1 - Math.abs(a)), z]);
     }
     for (const side of sides) {
-      face(body, [side, 0, 0], seal, [side * low, sillHeight, sillZ], [side * low, sillHeight, z], [side * topWidth, top, z]);
+      face(body, [side, 0, 0], seal, [side * low, wheelOpening(z), sillZ], [side * low, wheelOpening(z), z], [side * topWidth, top, z]);
     }
     const part = components?.[end > 0 ? 0 : 1];
     if (end > 0) {
@@ -278,13 +282,13 @@ function bumper(paint, body, end) {
 
 const cabinLine = [
   // Lower z, upper z, belt height, roof height, lower width, roof width.
-  [-2.230, -1.91, 1.029, 1.338, .756, .651],
-  [-1.951, -1.80, 1.052, 1.383, .815, .669],
-  [-1.28, -1.237, 1.061, 1.394, .825, .688],
-  [-.676, -.651, 1.066, 1.407, .830, .699],
-  [-.146, -.187, 1.070, 1.406, .830, .699],
-  [ .752,  .324, 1.068, 1.408, .822, .693],
-  [ 1.115,  .473, 1.066, 1.366, .782, .681],
+  [-2.230, -1.75, 1.006, 1.368, .786, .642],
+  [-1.951, -1.61, 1.036, 1.409, .815, .681],
+  [-1.28, -1.237, 1.046, 1.428, .825, .688],
+  [-.676, -.651, 1.050, 1.442, .830, .699],
+  [-.146, -.187, 1.055, 1.444, .830, .699],
+  [ .752,  .245, 1.057, 1.420, .822, .693],
+  [ 1.115,  .435, 1.066, 1.371, .782, .681],
 ];
 
 function cabinPoint(side, section, height, offset = 0) {
@@ -342,18 +346,18 @@ function buildCabin(body, paint, glass, brightwork, components) {
         face(glass, out, blackGlass, windowPoint(a, left, .121), windowPoint(b, right, .121), windowPoint(b, right, .57), windowPoint(a, left, .57));
         face(glass, out, blackGlass, windowPoint(a, left, .57), windowPoint(b, right, .57), windowPoint(b, right, .87), windowPoint(a, left, .87));
         trace(brightwork, [f(a, .074, .008), f(b, .074, .008)], .011, out, nickel);
-        trace(body, [f(a, .92, .005), f(b, .92, .005)], .012, out, molding);
+        trace(brightwork, [f(a, .92, .005), f(b, .92, .005)], .010, out, nickel);
       }
     }
 
     // Roof rack with tapered rails and attachment feet.
     const railX = side * .537;
-    for (const z of [-1.65, -.73, .26]) {
+    for (const z of [-1.53, -.73, .22]) {
       const pos = z > .1 ? 0 : z < -1.0 ? -.014 : .012;
-      body.box(railX - .031, 1.405 + pos, z - .059, railX + .031, 1.471 + pos, z + .049, molding);
+      body.box(railX - .031, 1.425 + pos, z - .059, railX + .031, 1.516 + pos, z + .049, molding);
     }
-    const rail = [[railX, 1.424, -1.811], [railX, 1.488, -1.56], [railX, 1.498, -.67], [railX, 1.484, .218], [railX, 1.431, .393]];
-    sweep(brightwork, rail, .025, 8, rgb(64, 68, 72));
+    const rail = [[railX, 1.451, -1.66], [railX, 1.525, -1.52], [railX, 1.546, -.67], [railX, 1.507, .20], [railX, 1.449, .32]];
+    sweep(brightwork, rail, .026, 10, chrome);
 
     // Rounded body-colour housing, recessed matte rim and mirror glass.
     const mirror = components?.[side < 0 ? 2 : 3];
@@ -417,7 +421,7 @@ function buildWindscreen(body, paint, glass, end) {
       const tint = h < .51 ? rgb(48, 56, 60) : rgb(73, 84, 91);
       trace(body, rows.slice(1, -1).map(x => at(x, h, .018)), .0023, out, tint);
     }
-    trace(body, [at(.065, .084, .018), at(.11, .237, .018), at(-.56, .305, .018)], .016, out, seal);
+    trace(body, [at(.32, .150, .024), at(.29, .202, .024), at(-.48, .186, .024)], .016, out, seal);
   } else {
     for (const offset of [-.42, .31]) {
       trace(body, [at(offset, .08, .015), at(offset + .09, .205, .018), at(offset - .26, .247, .021)], .015, out, seal);
@@ -511,17 +515,7 @@ function buildHatch(body, paint, brightwork) {
   const grip = (x, y) => hatch(x, y, 2.417);
   trace(body, [grip(-.118, .867), grip(.118, .867)], .014, out, seal);
   trace(brightwork, [hatch(-.298, .881, 2.416), hatch(.298, .881, 2.416)], .007, out, rgb(106, 116, 125));
-  const letter = (glyph, left, y, size) => {
-    for (const path of glyphs[glyph]) {
-      const stroke = path.map(([x, height]) => hatch(left + x * size * .60, y + height * size, 2.394 - height * .027));
-      trace(brightwork, stroke, .0028, out, chrome);
-    }
-  };
-  letter('A', -.412, .931, .035);
-  letter('6', -.385, .931, .035);
-  letter('2', .337, .932, .028);
-  letter('8', .366, .932, .028);
-  trace(brightwork, [hatch(.359, .934, 2.396), hatch(.361, .934, 2.396)], .003, out, chrome);
+  trace(brightwork, [hatch(-.57, .675, 2.401), hatch(-.46, .664, 2.420), hatch(.46, .664, 2.420), hatch(.57, .675, 2.401)], .014, out, chrome);
 }
 
 function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeLights, reverseLights, leftSignals, rightSignals }, frontBumper) {
@@ -551,7 +545,7 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
 
   for (const side of sides) {
     const indicator = side < 0 ? leftSignals : rightSignals;
-    const amberGlass = rgb(161, 89, 32), amberRib = rgb(113, 58, 27);
+    const amberGlass = rgb(170, 154, 119), amberRib = rgb(145, 133, 107);
     const hd = (x, y, z) => [x * side, y, z];
     const frontOut = [side * .32, 0, 1];
     const lamp = (x, y, depth = 0) => hd(x, y, 2.395 - Math.max(0, x - .59) * .33 + depth);
@@ -562,14 +556,7 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
     lensEllipse(headLights, lamp, frontOut, .459, .818, .034, .027, .012, rgb(207, 210, 190));
     lensEllipse(headLights, lamp, frontOut, .620, .817, .071, .042, .009, rgb(163, 170, 160));
     lensEllipse(headLights, lamp, frontOut, .620, .817, .053, .031, .011, rgb(218, 216, 194));
-    for (let i = 0; i < 17; i++) {
-      const x = .396 + i * .0195;
-      const highlight = i % 3 === 0 ? rgb(221, 226, 215) : rgb(169, 178, 174);
-      trace(headLights, [lamp(x, .768, .015), lamp(x + .001, .814, .017), lamp(x + .002, .866, .015)],
-        .0024, frontOut, highlight);
-    }
-    for (const y of [.785, .844]) trace(headLights,
-      [lamp(.390, y, .019), lamp(.59, y + .001, .020), lamp(.716, y + .004, .019)], .0018, frontOut, rgb(141, 153, 152));
+    lensEllipse(headLights, lamp, frontOut, .466, .818, .024, .028, .016, rgb(97, 120, 138));
     lampPanel(indicator, frontOut, lamp, .59, amberGlass, .737, .825, .755, .759, .875, .882, .011);
     for (const x of [.754, .773, .793, .811]) {
       trace(indicator, [lamp(x, .764, .013), lamp(x, .873, .013)], .0021, frontOut, amberRib);
@@ -601,16 +588,11 @@ function buildLighting({ body, paint, brightwork, headLights, tailLights, brakeL
 
     const tailOut = [side * .32, 0, -1];
     const tail = (x, y, depth = 0) => [side * x, y, -(2.395 - Math.max(0, x - .658) * .325 + depth)];
-    lampPanel(body, tailOut, tail, .658, seal, .470, .835, .730, .723, .970, .971);
-    lampPanel(tailLights, tailOut, tail, .658, rgb(115, 31, 38), .480, .828, .797, .791, .838, .840, .007);
-    lampPanel(brakeLights, tailOut, tail, .658, rgb(149, 40, 44), .480, .830, .844, .843, .955, .956, .010);
-    for (let i = 0; i < 4; i++) {
-      const y = .850 + i * .024;
-      trace(brakeLights, [tail(.486, y, .012), tail(.658, y, .012), tail(.827, y, .012)], .004, tailOut, rgb(111, 24, 33));
-    }
-    lampPanel(reverseLights, tailOut, tail, .658, rgb(127, 132, 129), .480, .670, .739, .738, .790, .794, .008);
-    lampPanel(indicator, tailOut, tail, .658, amberGlass, .674, .827, .736, .734, .786, .791, .012);
-    trace(indicator, [tail(.677, .761, .014), tail(.826, .758, .014)], .003, tailOut, amberRib);
+    lampPanel(body, tailOut, tail, .658, seal, .558, .838, .648, .671, .977, .985);
+    lampPanel(tailLights, tailOut, tail, .658, rgb(158, 23, 32), .570, .831, .655, .680, .971, .978, .008);
+    lampPanel(brakeLights, tailOut, tail, .658, rgb(171, 32, 42), .582, .829, .831, .835, .965, .974, .012);
+    lampPanel(reverseLights, tailOut, tail, .658, rgb(189, 190, 181), .600, .740, .762, .764, .814, .817, .014);
+    lampPanel(indicator, tailOut, tail, .658, rgb(184, 179, 160), .740, .819, .764, .768, .814, .817, .015);
     // Short continuation of the rear light into the quarter panel.
     face(tailLights, tailOut, rgb(115, 30, 37), tail(.826, .792, .010), [side * .865, .796, -2.252], [side * .863, .935, -2.253], tail(.826, .958, .010));
   }
@@ -669,12 +651,14 @@ function buildWheel(wheel) {
   }
   for (const side of sides) {
     const out = [side, 0, 0];
-    for (let spoke = 0; spoke < 6; spoke++) {
-      const a = spoke * tau / 6;
+    for (let spoke = 0; spoke < 5; spoke++) {
+      const a = spoke * tau / 5;
       const q = (x, radius, offset) => p(side * x, radius, a + offset);
-      panel(wheel, out, rgb(161, 172, 178), [q(.113, .064, -.36), q(.109, .208, -.132), q(.110, .209, .096), q(.112, .064, .32)], null, 'metal');
-      panel(wheel, out, rgb(112, 122, 129), [q(.112, .064, .32), q(.110, .209, .096), q(.098, .210, .166), q(.100, .065, .49)], null, 'metal');
-      panel(wheel, out, rgb(119, 130, 137), [q(.113, .064, -.36), q(.109, .208, -.132), q(.098, .210, -.194), q(.100, .065, -.49)], null, 'metal');
+      panel(wheel, out, nickel, [q(.112,.055,-.22), q(.112,.142,-.09), q(.112,.142,.09), q(.112,.055,.22)], null, 'metal');
+      for (const branch of [-1, 1]) {
+        const offset = branch * .19;
+        panel(wheel, out, chrome, [q(.113,.127,-.10),q(.108,.212,offset-.047),q(.108,.212,offset+.047),q(.113,.127,.10)], null, 'metal');
+      }
       const lug = (angle, radius, x) => [side * x, Math.sin(a) * .039 + Math.sin(angle) * radius, Math.cos(a) * .039 + Math.cos(angle) * radius];
       for (let faceIndex = 0; faceIndex < 6; faceIndex++) {
         face(wheel, out, rgb(62, 69, 74), lug(0, 0, .114), lug(faceIndex * tau / 6, .006, .114), lug((faceIndex + 1) * tau / 6, .006, .114));

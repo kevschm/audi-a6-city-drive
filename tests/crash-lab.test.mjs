@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CONTACT_MATERIALS, solveContact } from '../src/simulation/contact-impulse.js';
-import { createCrashScenario } from '../src/simulation/crash-lab.js';
+import { createCrashScenario } from './contact-fixtures.mjs';
 import { createFixedStepClock, FIXED_STEP_SECONDS as dt } from '../src/simulation/fixed-step.js';
 import { createPropWorld } from '../src/simulation/rigid-props.js';
 import { createRagdoll, ragdollSegments, stepPedestrianRigs, stepRagdoll } from '../src/simulation/ragdoll.js';

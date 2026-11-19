@@ -59,7 +59,7 @@ test('Avant meshes use valid metre-scale vertices and share the driving geometry
   }
 
   const paint = batches.paint.flatMap(tri => tri.points);
-  assert.ok(paint.every(([x, y, z]) => Math.abs(x) <= 1.02 && y > .20 && y < 1.45 && Math.abs(z) < 2.43));
+  assert.ok(paint.every(([x, y, z]) => Math.abs(x) <= 1.02 && y > .20 && y < 1.49 && Math.abs(z) < 2.43));
   assert.ok(Math.abs(AVANT_WHEELS.front - AVANT_WHEELS.rear - 2.69) < 1e-8);
   const wheel = batches.wheel.flatMap(tri => tri.points);
   const radius = Math.max(...wheel.map(([, y, z]) => Math.hypot(y, z)));
@@ -73,12 +73,12 @@ test('headlamps and separately animated rear lenses sit in front of the shell', 
     const headlamp = visibleInEndView(silhouette, side * .54, .81, 1);
     assert.equal(headlamp.part, 'headLights');
     assert.ok(Math.min(...headlamp.color) > .60);
-    assert.equal(visibleInEndView(silhouette, side * .57, .818, -1).part, 'tailLights');
-    assert.equal(visibleInEndView(silhouette, side * .57, .902, -1).part, 'brakeLights');
+    assert.equal(visibleInEndView(silhouette, side * .67, .716, -1).part, 'tailLights');
+    assert.equal(visibleInEndView(silhouette, side * .64, .902, -1).part, 'brakeLights');
     assert.equal(visibleInEndView(silhouette, side * .787, .902, -1).part, 'brakeLights');
-    assert.equal(visibleInEndView(silhouette, side * .57, .774, -1).part, 'reverseLights');
+    assert.equal(visibleInEndView(silhouette, side * .66, .783, -1).part, 'reverseLights');
   }
-  assert.equal(visibleInEndView(silhouette, .05, 1.312, -1).part, 'brakeLights');
+  assert.equal(visibleInEndView(silhouette, .05, 1.337, -1).part, 'brakeLights');
 });
 
 test('both direction indicators are visible from both ends and independent by side', () => {

@@ -1,7 +1,7 @@
 import { buildAvant, AVANT_WHEELS } from './avant.js';
 import { multiply, rotateX, rotateY, transform, translate } from './math.js';
 import { color, Mesh } from './mesh.js';
-import { MATERIAL } from './renderer.js?drive-0100';
+import { MATERIAL } from './renderer.js?drive-0110';
 import { createCockpit, dialAngle, dialPose } from './cockpit.js';
 import { GATE_HALF_WIDTH } from '../simulation/time-trial.js';
 import { detachableParts } from '../simulation/vehicle-damage.js';
